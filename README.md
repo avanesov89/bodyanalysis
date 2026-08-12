@@ -31,7 +31,9 @@ npm run dev
 1. Скопируй `.env.example` в `.env`.
 2. Заполни `VITE_FIREBASE_*` из настроек Firebase Web App.
 3. Создай Firestore Database.
-4. Перезапусти dev-сервер.
+4. Включи Firebase Authentication -> Sign-in method -> Email/Password.
+5. Создай пользователя с email/password.
+6. Перезапусти dev-сервер.
 
 Записи будут храниться в коллекции:
 
@@ -40,6 +42,29 @@ healthUsers/{VITE_FIREBASE_USER_SCOPE}/entries
 ```
 
 Для первой личной версии можно оставить `VITE_FIREBASE_USER_SCOPE=default`.
+
+Если заполнить `VITE_FIREBASE_AUTH_EMAIL`, экран входа будет просить только пароль и использовать этот email автоматически. Если оставить переменную пустой, экран входа покажет email и пароль.
+
+Минимальные Firestore rules после включения входа:
+
+```js
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /healthUsers/default/entries/{entryId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+Пример правил также лежит в `firestore.rules`. Для максимального ограничения можно добавить проверку конкретного email:
+
+```js
+allow read, write: if request.auth != null
+  && request.auth.token.email == "you@example.com";
+```
 
 ## Проверка
 

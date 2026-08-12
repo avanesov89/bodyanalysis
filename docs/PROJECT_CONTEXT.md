@@ -14,6 +14,7 @@ Body Analysis — личный web-интерфейс для учета пита
 - shadcn/ui-подход: локальные UI-компоненты в `src/components/ui`.
 - Tailwind CSS v4 используется как CSS-слой shadcn.
 - Firebase Web SDK + Firestore.
+- Firebase Authentication для входа.
 - Без Firebase приложение может работать через `localStorage`.
 
 ## Запуск
@@ -45,6 +46,7 @@ VITE_FIREBASE_STORAGE_BUCKET
 VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
 VITE_FIREBASE_USER_SCOPE
+VITE_FIREBASE_AUTH_EMAIL
 ```
 
 Firestore collection path:
@@ -55,7 +57,21 @@ healthUsers/{VITE_FIREBASE_USER_SCOPE}/entries
 
 Для текущей личной версии используется `VITE_FIREBASE_USER_SCOPE=default`.
 
-На этапе MVP правила Firestore могут быть открыты только для разработки:
+### Вход
+
+Добавлен Firebase Authentication через Email/Password.
+
+Если `VITE_FIREBASE_AUTH_EMAIL` заполнен, экран входа визуально просит только пароль и использует этот email автоматически. Если переменная пустая, экран входа просит email и пароль.
+
+В Firebase Console нужно включить:
+
+```text
+Authentication -> Sign-in method -> Email/Password
+```
+
+И создать пользователя с нужным email/password.
+
+После включения входа Firestore rules лучше закрыть так:
 
 ```js
 rules_version = '2';
@@ -63,13 +79,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /healthUsers/default/entries/{entryId} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null;
     }
   }
 }
 ```
 
-Важно: перед публичным использованием нужно добавить авторизацию и закрыть правила.
+Если нужно ограничить доступ конкретным email, можно ужесточить правило:
+
+```js
+allow read, write: if request.auth != null
+  && request.auth.token.email == "you@example.com";
+```
 
 ## Модель данных
 
@@ -151,6 +172,7 @@ updatedAt: string
 - Кнопка `Пример` удалена из всех форм.
 - Комментарии/notes в формах удалены.
 - Заголовки и кнопки уменьшены, интерфейс должен быть компактным.
+- При включенном Firebase приложение показывает экран входа до чтения Firestore.
 
 ## Экспорт JSON
 
@@ -176,6 +198,7 @@ updatedAt: string
 - `src/types/health.ts` — типы записей и labels разделов.
 - `src/lib/health-store.ts` — работа с Firestore/localStorage, нормализация legacy-полей.
 - `src/lib/firebase.ts` — инициализация Firebase из env.
+- `firestore.rules` — пример закрытых правил Firestore для авторизованного пользователя.
 - `src/components/ui/*` — локальные shadcn-style компоненты.
 - `src/index.css` — Tailwind v4 и CSS-переменные темы.
 
@@ -202,7 +225,7 @@ git@github.com:avanesov89/bodyanalysis.git
 
 ## Ближайшие возможные задачи
 
-- Добавить авторизацию Firebase и закрытые Firestore rules.
+- Закрыть Firestore rules под конкретный email/uid.
 - Подготовить деплой и подключение домена.
 - Добавить фильтры по датам и диапазонам.
 - Сделать страницу технического JSON-экспорта более гибкой: диапазон дат, формат за неделю, формат для GPT.

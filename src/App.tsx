@@ -10,10 +10,12 @@ import {
   Plus,
   Scale,
   Settings,
+  ShieldCheck,
   Trash2,
   Utensils,
   Waves,
 } from "lucide-react"
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +29,7 @@ import {
 } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { firebaseAuthEmail, getAuthClient, isFirebaseConfigured } from "@/lib/firebase"
 import { getSyncMode, listEntries, removeEntry, upsertEntry } from "@/lib/health-store"
 import type { EntryDraft, EntryKind, HealthEntry } from "@/types/health"
 import { kindLabels } from "@/types/health"
@@ -182,6 +185,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function App() {
   const [entries, setEntries] = useState<HealthEntry[]>([])
+  const [authReady, setAuthReady] = useState(!isFirebaseConfigured())
+  const [authUser, setAuthUser] = useState<User | null>(null)
   const [activePage, setActivePage] = useState<AppPage>("nutrition")
   const [selectedKind, setSelectedKind] = useState<EntryKind>("nutrition")
   const [exportKind, setExportKind] = useState<ExportKind>("all")
@@ -193,6 +198,7 @@ function App() {
   const [message, setMessage] = useState("")
 
   const syncMode = getSyncMode()
+  const authEnabled = Boolean(getAuthClient())
 
   const sectionEntries = useMemo(() => {
     return entries.filter((entry) => entry.kind === selectedKind)
@@ -212,8 +218,43 @@ function App() {
   }
 
   useEffect(() => {
-    void refresh()
+    const auth = getAuthClient()
+    if (!auth) {
+      setAuthReady(true)
+      return undefined
+    }
+
+    return onAuthStateChanged(auth, (user) => {
+      setAuthUser(user)
+      setAuthReady(true)
+
+      if (!user) {
+        setEntries([])
+        setLoading(false)
+      }
+    })
   }, [])
+
+  useEffect(() => {
+    if (!authReady) return
+    if (authEnabled && !authUser) return
+
+    void refresh()
+  }, [authReady, authEnabled, authUser])
+
+  async function signIn(email: string, password: string) {
+    const auth = getAuthClient()
+    if (!auth) return
+
+    await signInWithEmailAndPassword(auth, email, password)
+  }
+
+  async function signOutUser() {
+    const auth = getAuthClient()
+    if (!auth) return
+
+    await signOut(auth)
+  }
 
   function openKind(kind: EntryKind) {
     setActivePage(kind)
@@ -327,6 +368,14 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
+  if (!authReady) {
+    return <AuthLoading />
+  }
+
+  if (authEnabled && !authUser) {
+    return <LoginPage onSignIn={signIn} />
+  }
+
   return (
     <TooltipProvider>
       <main className="min-h-svh bg-background">
@@ -384,11 +433,14 @@ function App() {
           <section className="min-w-0 px-4 py-5 sm:px-6 lg:px-8">
             {activePage === "settings" ? (
               <SettingsPage
+                authEmail={authUser?.email ?? ""}
+                authEnabled={authEnabled}
                 entries={entries}
                 exportKind={exportKind}
                 syncMode={syncMode}
                 onExport={downloadSectionJson}
                 onExportKindChange={setExportKind}
+                onSignOut={signOutUser}
               />
             ) : (
               <>
@@ -475,18 +527,92 @@ function App() {
   )
 }
 
+function AuthLoading() {
+  return (
+    <main className="grid min-h-svh place-items-center bg-background px-4">
+      <div className="grid gap-3 text-center">
+        <div className="mx-auto flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <ShieldCheck className="size-5" />
+        </div>
+        <p className="text-sm text-muted-foreground">Проверяем доступ</p>
+      </div>
+    </main>
+  )
+}
+
+function LoginPage({ onSignIn }: { onSignIn: (email: string, password: string) => Promise<void> }) {
+  const [email, setEmail] = useState(firebaseAuthEmail)
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const passwordOnly = Boolean(firebaseAuthEmail)
+
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setLoading(true)
+    setError("")
+
+    try {
+      await onSignIn(email, password)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Не удалось войти")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <main className="grid min-h-svh place-items-center bg-background px-4">
+      <form onSubmit={submitLogin} className="grid w-full max-w-sm gap-5 rounded-md border bg-background p-5 shadow-xs">
+        <div className="grid gap-2">
+          <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <ShieldCheck className="size-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-normal">Body Analysis</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Вход в личную базу</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4">
+          {!passwordOnly ? (
+            <Field label="Email">
+              <Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
+            </Field>
+          ) : null}
+          <Field label="Пароль">
+            <Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
+          </Field>
+        </div>
+
+        {error ? <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{error}</p> : null}
+
+        <Button type="submit" disabled={loading}>
+          {loading ? "Вход..." : "Войти"}
+        </Button>
+      </form>
+    </main>
+  )
+}
+
 function SettingsPage({
+  authEmail,
+  authEnabled,
   entries,
   exportKind,
   syncMode,
   onExport,
   onExportKindChange,
+  onSignOut,
 }: {
+  authEmail: string
+  authEnabled: boolean
   entries: HealthEntry[]
   exportKind: ExportKind
   syncMode: "firebase" | "local"
   onExport: () => void
   onExportKindChange: (kind: ExportKind) => void
+  onSignOut: () => void
 }) {
   const exportCount = exportKind === "all"
     ? entries.length
@@ -506,6 +632,17 @@ function SettingsPage({
               <span className="text-muted-foreground">Текущий режим</span>
               <span className="font-medium">{syncMode === "firebase" ? "Firebase / Firestore" : "LocalStorage"}</span>
             </div>
+            {authEnabled ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                <span className="text-muted-foreground">Доступ</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">{authEmail || "Авторизован"}</span>
+                  <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
+                    Выйти
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <p className="leading-6 text-muted-foreground">
               {syncMode === "firebase"
                 ? "Данные сохраняются в Firestore в коллекции healthUsers/default/entries."

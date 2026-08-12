@@ -1,4 +1,5 @@
 import { initializeApp, type FirebaseApp } from "firebase/app"
+import { getAuth, type Auth } from "firebase/auth"
 import { getFirestore, type Firestore } from "firebase/firestore"
 
 const firebaseConfig = {
@@ -11,21 +12,42 @@ const firebaseConfig = {
 }
 
 export const firebaseUserScope = import.meta.env.VITE_FIREBASE_USER_SCOPE || "default"
+export const firebaseAuthEmail = import.meta.env.VITE_FIREBASE_AUTH_EMAIL || ""
 
 export function isFirebaseConfigured() {
   return Object.values(firebaseConfig).every(Boolean)
 }
 
 let app: FirebaseApp | null = null
+let auth: Auth | null = null
 let db: Firestore | null = null
 
-export function getDb() {
+function getFirebaseApp() {
   if (!isFirebaseConfigured()) {
     return null
   }
 
   app ??= initializeApp(firebaseConfig)
-  db ??= getFirestore(app)
+  return app
+}
+
+export function getAuthClient() {
+  const firebaseApp = getFirebaseApp()
+  if (!firebaseApp) {
+    return null
+  }
+
+  auth ??= getAuth(firebaseApp)
+  return auth
+}
+
+export function getDb() {
+  const firebaseApp = getFirebaseApp()
+  if (!firebaseApp) {
+    return null
+  }
+
+  db ??= getFirestore(firebaseApp)
 
   return db
 }
