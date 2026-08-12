@@ -404,7 +404,7 @@ function App() {
     <TooltipProvider>
       <main className="min-h-svh bg-background">
         <div className="mx-auto grid max-w-[1380px] gap-0 lg:grid-cols-[248px_minmax(0,1fr)]">
-          <aside className="border-b bg-background px-5 py-5 lg:min-h-svh lg:border-r lg:border-b-0">
+          <aside className="border-b bg-background px-5 py-5 lg:relative lg:min-h-svh lg:border-b-0 lg:after:absolute lg:after:top-5 lg:after:right-0 lg:after:bottom-5 lg:after:border-r lg:after:content-['']">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
                 <Activity className="size-5" />
