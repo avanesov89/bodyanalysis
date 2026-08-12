@@ -6,11 +6,14 @@ import {
   BarChart3,
   Download,
   Dumbbell,
+  Info,
+  Moon,
   Pencil,
   Plus,
   Scale,
   Settings,
   ShieldCheck,
+  Sun,
   Trash2,
   Utensils,
   Waves,
@@ -42,8 +45,10 @@ import type { EntryDraft, EntryKind, HealthEntry } from "@/types/health"
 import { kindLabels } from "@/types/health"
 
 const kindOptions: EntryKind[] = ["nutrition", "body", "activity", "measurements", "note"]
-type AppPage = EntryKind | "settings"
+type AppPage = EntryKind | "settings" | "about"
 type ExportKind = EntryKind | "all"
+type ThemeMode = "light" | "dark"
+const themeStorageKey = "body-analysis.theme.v1"
 
 const kindIcons: Record<EntryKind, typeof Utensils> = {
   nutrition: Utensils,
@@ -55,6 +60,19 @@ const kindIcons: Record<EntryKind, typeof Utensils> = {
 
 function today() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function getInitialTheme(): ThemeMode {
+  try {
+    const savedTheme = localStorage.getItem(themeStorageKey)
+    if (savedTheme === "light" || savedTheme === "dark") {
+      return savedTheme
+    }
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+  } catch {
+    return "light"
+  }
 }
 
 function emptyDraft(kind: EntryKind = "nutrition"): EntryDraft {
@@ -197,6 +215,7 @@ function App() {
   const [activePage, setActivePage] = useState<AppPage>("nutrition")
   const [selectedKind, setSelectedKind] = useState<EntryKind>("nutrition")
   const [exportKind, setExportKind] = useState<ExportKind>("all")
+  const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme)
   const [draft, setDraft] = useState<EntryDraft>(() => emptyDraft("nutrition"))
   const [editing, setEditing] = useState<HealthEntry | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -210,6 +229,12 @@ function App() {
   const sectionEntries = useMemo(() => {
     return entries.filter((entry) => entry.kind === selectedKind)
   }, [entries, selectedKind])
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", themeMode === "dark")
+    document.documentElement.style.colorScheme = themeMode
+    localStorage.setItem(themeStorageKey, themeMode)
+  }, [themeMode])
 
   async function refresh() {
     setLoading(true)
@@ -291,6 +316,13 @@ function App() {
 
   function openSettings() {
     setActivePage("settings")
+    setEditing(null)
+    setIsFormOpen(false)
+    setMessage("")
+  }
+
+  function openAbout() {
+    setActivePage("about")
     setEditing(null)
     setIsFormOpen(false)
     setMessage("")
@@ -450,6 +482,19 @@ function App() {
                   <Settings className="size-4" />
                   Настройки
                 </button>
+                <button
+                  type="button"
+                  onClick={openAbout}
+                  className={[
+                    "mt-2 flex h-9 w-full items-center gap-3 rounded-md px-3 text-left transition-colors",
+                    activePage === "about"
+                      ? "bg-secondary text-secondary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  ].join(" ")}
+                >
+                  <Info className="size-4" />
+                  О проекте
+                </button>
               </div>
             </nav>
           </aside>
@@ -462,11 +507,15 @@ function App() {
                 authUserId={authUser?.uid ?? ""}
                 entries={entries}
                 exportKind={exportKind}
+                themeMode={themeMode}
                 onExport={downloadSectionJson}
                 onExportKindChange={setExportKind}
                 onResetPassword={resetPassword}
                 onSignOut={signOutUser}
+                onThemeModeChange={setThemeMode}
               />
+            ) : activePage === "about" ? (
+              <AboutPage />
             ) : (
               <>
                 <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -677,20 +726,24 @@ function SettingsPage({
   authUserId,
   entries,
   exportKind,
+  themeMode,
   onExport,
   onExportKindChange,
   onResetPassword,
   onSignOut,
+  onThemeModeChange,
 }: {
   authEmail: string
   authEnabled: boolean
   authUserId: string
   entries: HealthEntry[]
   exportKind: ExportKind
+  themeMode: ThemeMode
   onExport: () => void
   onExportKindChange: (kind: ExportKind) => void
   onResetPassword: () => Promise<void>
   onSignOut: () => void
+  onThemeModeChange: (theme: ThemeMode) => void
 }) {
   const [passwordResetMessage, setPasswordResetMessage] = useState("")
   const [passwordResetLoading, setPasswordResetLoading] = useState(false)
@@ -761,6 +814,43 @@ function SettingsPage({
         </section>
 
         <section className="rounded-md border bg-background p-4 shadow-xs">
+          <h3 className="font-semibold">Оформление</h3>
+          <div className="mt-4 grid gap-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-muted-foreground">Тема интерфейса</span>
+              <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+                <button
+                  type="button"
+                  onClick={() => onThemeModeChange("light")}
+                  className={[
+                    "inline-flex h-8 items-center justify-center gap-2 rounded-sm px-3 transition-colors",
+                    themeMode === "light"
+                      ? "bg-background font-medium text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground",
+                  ].join(" ")}
+                >
+                  <Sun className="size-4" />
+                  Светлая
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onThemeModeChange("dark")}
+                  className={[
+                    "inline-flex h-8 items-center justify-center gap-2 rounded-sm px-3 transition-colors",
+                    themeMode === "dark"
+                      ? "bg-background font-medium text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground",
+                  ].join(" ")}
+                >
+                  <Moon className="size-4" />
+                  Темная
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-md border bg-background p-4 shadow-xs">
           <h3 className="font-semibold">Выгрузка JSON</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <Field label="Раздел">
@@ -786,6 +876,56 @@ function SettingsPage({
           <p className="mt-3 text-sm text-muted-foreground">
             Записей для выгрузки: {exportCount}
           </p>
+        </section>
+      </div>
+    </>
+  )
+}
+
+function AboutPage() {
+  return (
+    <>
+      <header>
+        <h2 className="text-xl font-semibold tracking-normal">О проекте</h2>
+      </header>
+
+      <div className="mt-6 grid w-full gap-6">
+        <section className="rounded-md border bg-background p-4 shadow-xs">
+          <h3 className="font-semibold">Body Analysis</h3>
+          <div className="mt-4 grid gap-3 text-sm leading-6 text-muted-foreground">
+            <p>
+              Личный журнал для учета питания, показателей тела, активности, замеров и коротких заметок.
+            </p>
+            <p>
+              Проект сфокусирован на ручном вводе ключевых чисел и выгрузке структурированного JSON для дальнейшего анализа.
+            </p>
+          </div>
+        </section>
+
+        <section className="rounded-md border bg-background p-4 shadow-xs">
+          <h3 className="font-semibold">Разделы</h3>
+          <div className="mt-4 grid gap-3 text-sm">
+            <div className="flex items-center justify-between gap-4 border-b pb-3">
+              <span className="text-muted-foreground">Питание</span>
+              <span className="text-right">калории и макронутриенты</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 border-b pb-3">
+              <span className="text-muted-foreground">Тело</span>
+              <span className="text-right">вес, жир, мышцы, вода</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 border-b pb-3">
+              <span className="text-muted-foreground">Активность</span>
+              <span className="text-right">активные калории и шаги</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 border-b pb-3">
+              <span className="text-muted-foreground">Замеры</span>
+              <span className="text-right">основные окружности тела</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">Заметка</span>
+              <span className="text-right">сон, стресс и самочувствие</span>
+            </div>
+          </div>
         </section>
       </div>
     </>
