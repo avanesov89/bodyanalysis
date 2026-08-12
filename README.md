@@ -32,39 +32,38 @@ npm run dev
 2. Заполни `VITE_FIREBASE_*` из настроек Firebase Web App.
 3. Создай Firestore Database.
 4. Включи Firebase Authentication -> Sign-in method -> Email/Password.
-5. Создай пользователя с email/password.
+5. Опубликуй правила из `firestore.rules`.
 6. Перезапусти dev-сервер.
 
 Записи будут храниться в коллекции:
 
 ```text
-healthUsers/{VITE_FIREBASE_USER_SCOPE}/entries
+healthUsers/{uid}/entries
 ```
 
-Для первой личной версии можно оставить `VITE_FIREBASE_USER_SCOPE=default`.
+`uid` берется из Firebase Authentication, поэтому каждый зарегистрированный пользователь видит только свои записи.
 
 Если заполнить `VITE_FIREBASE_AUTH_EMAIL`, экран входа будет просить только пароль и использовать этот email автоматически. Если оставить переменную пустой, экран входа покажет email и пароль.
+На экране регистрации email всегда вводится вручную.
 
-Минимальные Firestore rules после включения входа:
+Firestore rules для регистрации сторонних пользователей:
 
 ```js
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /healthUsers/default/entries/{entryId} {
-      allow read, write: if request.auth != null;
+    match /healthUsers/{userId}/entries/{entryId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
     }
   }
 }
 ```
 
-Пример правил также лежит в `firestore.rules`. Для максимального ограничения можно добавить проверку конкретного email:
+Пример правил также лежит в `firestore.rules`.
 
-```js
-allow read, write: if request.auth != null
-  && request.auth.token.email == "you@example.com";
-```
+Если до этого данные лежали в `healthUsers/default/entries`, они останутся в старом пути. Их можно перенести вручную или отдельной миграцией.
 
 ## Проверка
 
@@ -73,3 +72,31 @@ npm run build
 ```
 
 Сейчас сборка проходит. Vite может предупреждать о большом JS-чанке из-за Firebase SDK; для MVP это не блокирует работу.
+
+## Деплой GitHub Pages
+
+Проект нужно публиковать как Vite build, а не как корень репозитория. Для этого добавлен workflow:
+
+```text
+.github/workflows/deploy.yml
+```
+
+В GitHub открой `Settings -> Pages` и выбери:
+
+```text
+Build and deployment -> Source -> GitHub Actions
+```
+
+Кастомный домен лежит в `public/CNAME` и попадет в `dist` при сборке.
+
+Чтобы Firebase работал на опубликованном домене, добавь переменные в `Settings -> Secrets and variables -> Actions -> Secrets`:
+
+```text
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID
+VITE_FIREBASE_STORAGE_BUCKET
+VITE_FIREBASE_MESSAGING_SENDER_ID
+VITE_FIREBASE_APP_ID
+VITE_FIREBASE_AUTH_EMAIL
+```

@@ -51,3 +51,7 @@ export function getDb() {
 
   return db
 }
+
+export function getFirebaseUserScope() {
+  return getAuthClient()?.currentUser?.uid ?? firebaseUserScope
+}

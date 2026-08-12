@@ -45,23 +45,29 @@ VITE_FIREBASE_PROJECT_ID
 VITE_FIREBASE_STORAGE_BUCKET
 VITE_FIREBASE_MESSAGING_SENDER_ID
 VITE_FIREBASE_APP_ID
-VITE_FIREBASE_USER_SCOPE
 VITE_FIREBASE_AUTH_EMAIL
+```
+
+Legacy fallback:
+
+```text
+VITE_FIREBASE_USER_SCOPE
 ```
 
 Firestore collection path:
 
 ```text
-healthUsers/{VITE_FIREBASE_USER_SCOPE}/entries
+healthUsers/{uid}/entries
 ```
 
-Для текущей личной версии используется `VITE_FIREBASE_USER_SCOPE=default`.
+`uid` берется из Firebase Authentication. Для legacy-данных без текущего пользователя в коде остается fallback `VITE_FIREBASE_USER_SCOPE=default`, но рабочий сценарий с Firebase Auth использует uid.
 
-### Вход
+### Вход и регистрация
 
 Добавлен Firebase Authentication через Email/Password.
 
 Если `VITE_FIREBASE_AUTH_EMAIL` заполнен, экран входа визуально просит только пароль и использует этот email автоматически. Если переменная пустая, экран входа просит email и пароль.
+Экран регистрации всегда просит email и пароль, чтобы сторонний пользователь создавал собственный аккаунт.
 
 В Firebase Console нужно включить:
 
@@ -69,28 +75,22 @@ healthUsers/{VITE_FIREBASE_USER_SCOPE}/entries
 Authentication -> Sign-in method -> Email/Password
 ```
 
-И создать пользователя с нужным email/password.
-
-После включения входа Firestore rules лучше закрыть так:
+После включения входа Firestore rules нужно закрыть так:
 
 ```js
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /healthUsers/default/entries/{entryId} {
-      allow read, write: if request.auth != null;
+    match /healthUsers/{userId}/entries/{entryId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
     }
   }
 }
 ```
 
-Если нужно ограничить доступ конкретным email, можно ужесточить правило:
-
-```js
-allow read, write: if request.auth != null
-  && request.auth.token.email == "you@example.com";
-```
+Если до перехода на uid данные лежали в `healthUsers/default/entries`, они не появятся у пользователя автоматически. Для этого нужна ручная переноска или отдельная миграция в `healthUsers/{uid}/entries`.
 
 ## Модель данных
 
@@ -197,8 +197,8 @@ updatedAt: string
 - `src/App.tsx` — основной интерфейс, таблицы, формы, настройки и экспорт.
 - `src/types/health.ts` — типы записей и labels разделов.
 - `src/lib/health-store.ts` — работа с Firestore/localStorage, нормализация legacy-полей.
-- `src/lib/firebase.ts` — инициализация Firebase из env.
-- `firestore.rules` — пример закрытых правил Firestore для авторизованного пользователя.
+- `src/lib/firebase.ts` — инициализация Firebase из env и вычисление текущего Firestore user scope.
+- `firestore.rules` — правила Firestore, которые ограничивают записи текущим `request.auth.uid`.
 - `src/components/ui/*` — локальные shadcn-style компоненты.
 - `src/index.css` — Tailwind v4 и CSS-переменные темы.
 
@@ -225,7 +225,8 @@ git@github.com:avanesov89/bodyanalysis.git
 
 ## Ближайшие возможные задачи
 
-- Закрыть Firestore rules под конкретный email/uid.
+- Добавить миграцию старых данных из `healthUsers/default/entries` в `healthUsers/{uid}/entries`.
+- Добавить подтверждение email перед записью данных.
 - Подготовить деплой и подключение домена.
 - Добавить фильтры по датам и диапазонам.
 - Сделать страницу технического JSON-экспорта более гибкой: диапазон дат, формат за неделю, формат для GPT.

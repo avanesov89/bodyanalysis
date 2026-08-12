@@ -8,7 +8,7 @@ import {
   setDoc,
 } from "firebase/firestore"
 
-import { firebaseUserScope, getDb } from "@/lib/firebase"
+import { getDb, getFirebaseUserScope } from "@/lib/firebase"
 import type { EntryDraft, HealthEntry, SyncMode } from "@/types/health"
 
 const storageKey = "body-analysis.entries.v1"
@@ -130,7 +130,7 @@ function entriesCollection() {
   const db = getDb()
   if (!db) return null
 
-  return collection(db, "healthUsers", firebaseUserScope, "entries")
+  return collection(db, "healthUsers", getFirebaseUserScope(), "entries")
 }
 
 export function getSyncMode(): SyncMode {

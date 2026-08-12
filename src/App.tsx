@@ -15,7 +15,13 @@ import {
   Utensils,
   Waves,
 } from "lucide-react"
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth"
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  type User,
+} from "firebase/auth"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -249,6 +255,13 @@ function App() {
     await signInWithEmailAndPassword(auth, email, password)
   }
 
+  async function signUp(email: string, password: string) {
+    const auth = getAuthClient()
+    if (!auth) return
+
+    await createUserWithEmailAndPassword(auth, email, password)
+  }
+
   async function signOutUser() {
     const auth = getAuthClient()
     if (!auth) return
@@ -373,7 +386,7 @@ function App() {
   }
 
   if (authEnabled && !authUser) {
-    return <LoginPage onSignIn={signIn} />
+    return <LoginPage onSignIn={signIn} onSignUp={signUp} />
   }
 
   return (
@@ -435,6 +448,7 @@ function App() {
               <SettingsPage
                 authEmail={authUser?.email ?? ""}
                 authEnabled={authEnabled}
+                authUserId={authUser?.uid ?? ""}
                 entries={entries}
                 exportKind={exportKind}
                 syncMode={syncMode}
@@ -540,22 +554,33 @@ function AuthLoading() {
   )
 }
 
-function LoginPage({ onSignIn }: { onSignIn: (email: string, password: string) => Promise<void> }) {
+function LoginPage({
+  onSignIn,
+  onSignUp,
+}: {
+  onSignIn: (email: string, password: string) => Promise<void>
+  onSignUp: (email: string, password: string) => Promise<void>
+}) {
+  const [mode, setMode] = useState<"signIn" | "signUp">("signIn")
   const [email, setEmail] = useState(firebaseAuthEmail)
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const passwordOnly = Boolean(firebaseAuthEmail)
+  const passwordOnly = mode === "signIn" && Boolean(firebaseAuthEmail)
 
-  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
     setError("")
 
     try {
-      await onSignIn(email, password)
+      if (mode === "signUp") {
+        await onSignUp(email, password)
+      } else {
+        await onSignIn(email, password)
+      }
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Не удалось войти")
+      setError(error instanceof Error ? error.message : "Не удалось выполнить вход")
     } finally {
       setLoading(false)
     }
@@ -563,15 +588,48 @@ function LoginPage({ onSignIn }: { onSignIn: (email: string, password: string) =
 
   return (
     <main className="grid min-h-svh place-items-center bg-background px-4">
-      <form onSubmit={submitLogin} className="grid w-full max-w-sm gap-5 rounded-md border bg-background p-5 shadow-xs">
+      <form onSubmit={submitAuth} className="grid w-full max-w-sm gap-5 rounded-md border bg-background p-5 shadow-xs">
         <div className="grid gap-2">
           <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <ShieldCheck className="size-5" />
           </div>
           <div>
             <h1 className="text-xl font-semibold tracking-normal">Body Analysis</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Вход в личную базу</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === "signUp" ? "Регистрация личной базы" : "Вход в личную базу"}
+            </p>
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 rounded-md bg-muted p-1 text-sm">
+          <button
+            type="button"
+            className={[
+              "h-9 rounded-sm transition-colors",
+              mode === "signIn" ? "bg-background font-medium shadow-xs" : "text-muted-foreground",
+            ].join(" ")}
+            onClick={() => {
+              setMode("signIn")
+              setEmail(firebaseAuthEmail)
+              setError("")
+            }}
+          >
+            Вход
+          </button>
+          <button
+            type="button"
+            className={[
+              "h-9 rounded-sm transition-colors",
+              mode === "signUp" ? "bg-background font-medium shadow-xs" : "text-muted-foreground",
+            ].join(" ")}
+            onClick={() => {
+              setMode("signUp")
+              setEmail("")
+              setError("")
+            }}
+          >
+            Регистрация
+          </button>
         </div>
 
         <div className="grid gap-4">
@@ -581,14 +639,21 @@ function LoginPage({ onSignIn }: { onSignIn: (email: string, password: string) =
             </Field>
           ) : null}
           <Field label="Пароль">
-            <Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
+            <Input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              autoComplete={mode === "signUp" ? "new-password" : "current-password"}
+              minLength={6}
+              required
+            />
           </Field>
         </div>
 
         {error ? <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{error}</p> : null}
 
         <Button type="submit" disabled={loading}>
-          {loading ? "Вход..." : "Войти"}
+          {loading ? "Подождите..." : mode === "signUp" ? "Создать аккаунт" : "Войти"}
         </Button>
       </form>
     </main>
@@ -598,6 +663,7 @@ function LoginPage({ onSignIn }: { onSignIn: (email: string, password: string) =
 function SettingsPage({
   authEmail,
   authEnabled,
+  authUserId,
   entries,
   exportKind,
   syncMode,
@@ -607,6 +673,7 @@ function SettingsPage({
 }: {
   authEmail: string
   authEnabled: boolean
+  authUserId: string
   entries: HealthEntry[]
   exportKind: ExportKind
   syncMode: "firebase" | "local"
@@ -633,19 +700,25 @@ function SettingsPage({
               <span className="font-medium">{syncMode === "firebase" ? "Firebase / Firestore" : "LocalStorage"}</span>
             </div>
             {authEnabled ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-                <span className="text-muted-foreground">Доступ</span>
-                <div className="flex items-center gap-3">
-                  <span className="font-medium">{authEmail || "Авторизован"}</span>
-                  <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
-                    Выйти
-                  </Button>
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                  <span className="text-muted-foreground">Доступ</span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium">{authEmail || "Авторизован"}</span>
+                    <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
+                      Выйти
+                    </Button>
+                  </div>
                 </div>
-              </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                  <span className="text-muted-foreground">ID пользователя</span>
+                  <span className="max-w-full break-all font-mono text-xs">{authUserId || "-"}</span>
+                </div>
+              </>
             ) : null}
             <p className="leading-6 text-muted-foreground">
               {syncMode === "firebase"
-                ? "Данные сохраняются в Firestore в коллекции healthUsers/default/entries."
+                ? "Данные сохраняются в Firestore в коллекции healthUsers/{uid}/entries."
                 : "Данные сохраняются локально в браузере. Firebase включится после заполнения .env и перезапуска dev-сервера."}
             </p>
           </div>
