@@ -442,7 +442,7 @@ function App() {
                 <Activity className="size-5" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold tracking-normal">Body Analysis</h1>
+                <h1 className="text-lg font-semibold tracking-normal">Тело в цифрах</h1>
                 <p className="text-xs text-muted-foreground">Личная база здоровья</p>
               </div>
             </div>
@@ -654,7 +654,7 @@ function LoginPage({
             <ShieldCheck className="size-5" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold tracking-normal">Body Analysis</h1>
+            <h1 className="text-xl font-semibold tracking-normal">Тело в цифрах</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {mode === "signUp" ? "Регистрация личной базы" : "Вход в личную базу"}
             </p>
@@ -891,7 +891,7 @@ function AboutPage() {
 
       <div className="mt-6 grid w-full gap-6">
         <section className="rounded-md border bg-background p-4 shadow-xs">
-          <h3 className="font-semibold">Body Analysis</h3>
+          <h3 className="font-semibold">Тело в цифрах</h3>
           <div className="mt-4 grid gap-3 text-sm leading-6 text-muted-foreground">
             <p>
               Личный журнал для учета питания, показателей тела, активности, замеров и коротких заметок.
