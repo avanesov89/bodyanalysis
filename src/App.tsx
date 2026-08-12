@@ -135,70 +135,6 @@ function TrendValue({
   )
 }
 
-function describeEntry(entry: HealthEntry) {
-  if (entry.kind === "nutrition") {
-    return "Питание"
-  }
-
-  if (entry.kind === "body") {
-    return `Вес ${formatNumber(entry.weightKg, " кг")}`
-  }
-
-  if (entry.kind === "activity") {
-    return "Активность"
-  }
-
-  if (entry.kind === "measurements") {
-    return "Замеры тела"
-  }
-
-  return entry.mood ? `Самочувствие: ${entry.mood}` : "Заметка"
-}
-
-function metricLine(entry: HealthEntry) {
-  if (entry.kind === "nutrition") {
-    return [
-      formatNumber(entry.calories, " ккал"),
-      formatNumber(entry.protein, " Б"),
-      formatNumber(entry.fat, " Ж"),
-      formatNumber(entry.carbs, " У"),
-      formatNumber(entry.fiber, " клетчатка"),
-    ].join(" · ")
-  }
-
-  if (entry.kind === "body") {
-    return [
-      formatNumber(entry.fatMassKg, " кг жира"),
-      formatNumber(entry.muscleKg, " кг мышц"),
-      formatNumber(entry.waterPct, "% воды"),
-      formatNumber(entry.visceralFat, " висц."),
-    ].join(" · ")
-  }
-
-  if (entry.kind === "activity") {
-    return [
-      formatNumber(entry.activeCalories, " ккал"),
-      formatNumber(entry.steps, " шагов"),
-    ].join(" · ")
-  }
-
-  if (entry.kind === "measurements") {
-    return [
-      formatNumber(entry.waistCm, " талия"),
-      formatNumber(entry.chestCm, " грудь"),
-      formatNumber(entry.hipsCm, " бедра"),
-      formatNumber(entry.glutesCm, " ягодицы"),
-      formatNumber(entry.bicepsCm, " бицепс"),
-      formatNumber(entry.shouldersCm, " плечи"),
-    ].join(" · ")
-  }
-
-  return [
-    formatNumber(entry.sleepHours, " ч сна"),
-    entry.stressLevel ? `стресс ${entry.stressLevel}/10` : "стресс -",
-  ].join(" · ")
-}
-
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid gap-2">
@@ -582,7 +518,7 @@ function App() {
                           onDelete={deleteEntry}
                         />
                       ) : (
-                        <GenericTable
+                        <NoteTable
                           entries={sectionEntries}
                           loading={loading}
                           onEdit={startEdit}
@@ -992,7 +928,7 @@ function NutritionTable({
   )
 }
 
-function GenericTable({
+function NoteTable({
   entries,
   loading,
   onEdit,
@@ -1003,24 +939,28 @@ function GenericTable({
   onEdit: (entry: HealthEntry) => void
   onDelete: (id: string) => void
 }) {
+  const sortedEntries = useMemo(() => sortEntriesDesc(entries), [entries])
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead className="w-32">Дата</TableHead>
-          <TableHead>Запись</TableHead>
-          <TableHead>Показатели</TableHead>
+          <TableHead>Настроение</TableHead>
+          <TableHead className="w-28 text-right">Сон, ч</TableHead>
+          <TableHead className="w-28 text-right">Стресс</TableHead>
           <TableHead className="w-24 text-right">Действия</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {entries.map((entry) => (
+        {sortedEntries.map((entry) => (
           <TableRow key={entry.id}>
             <TableCell className="font-medium">{entry.date}</TableCell>
-            <TableCell>
-              <div className="font-medium">{describeEntry(entry)}</div>
+            <TableCell>{entry.mood || "-"}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatNumber(entry.sleepHours)}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {entry.stressLevel ? `${formatNumber(entry.stressLevel)}/10` : "-"}
             </TableCell>
-            <TableCell className="text-muted-foreground">{metricLine(entry)}</TableCell>
             <TableCell>
               <RowActions entry={entry} onEdit={onEdit} onDelete={onDelete} />
             </TableCell>
@@ -1028,7 +968,7 @@ function GenericTable({
         ))}
         {!loading && entries.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+            <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
               Записей в этом разделе пока нет.
             </TableCell>
           </TableRow>
