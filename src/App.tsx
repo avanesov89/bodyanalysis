@@ -18,6 +18,7 @@ import {
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   type User,
@@ -143,7 +144,7 @@ function metricLine(entry: HealthEntry) {
       formatNumber(entry.protein, " Б"),
       formatNumber(entry.fat, " Ж"),
       formatNumber(entry.carbs, " У"),
-      formatNumber(entry.fiber, " клетч."),
+      formatNumber(entry.fiber, " клетчатка"),
     ].join(" · ")
   }
 
@@ -260,6 +261,16 @@ function App() {
     if (!auth) return
 
     await createUserWithEmailAndPassword(auth, email, password)
+  }
+
+  async function resetPassword() {
+    const auth = getAuthClient()
+    const email = auth?.currentUser?.email
+    if (!auth || !email) {
+      throw new Error("У текущего пользователя нет email для смены пароля")
+    }
+
+    await sendPasswordResetEmail(auth, email)
   }
 
   async function signOutUser() {
@@ -454,11 +465,12 @@ function App() {
                 syncMode={syncMode}
                 onExport={downloadSectionJson}
                 onExportKindChange={setExportKind}
+                onResetPassword={resetPassword}
                 onSignOut={signOutUser}
               />
             ) : (
               <>
-                <header className="flex flex-col gap-4 border-b pb-4 xl:flex-row xl:items-end xl:justify-between">
+                <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                   <div>
                     <h2 className="text-xl font-semibold tracking-normal">
                       {kindLabels[selectedKind]}
@@ -669,6 +681,7 @@ function SettingsPage({
   syncMode,
   onExport,
   onExportKindChange,
+  onResetPassword,
   onSignOut,
 }: {
   authEmail: string
@@ -679,15 +692,32 @@ function SettingsPage({
   syncMode: "firebase" | "local"
   onExport: () => void
   onExportKindChange: (kind: ExportKind) => void
+  onResetPassword: () => Promise<void>
   onSignOut: () => void
 }) {
+  const [passwordResetMessage, setPasswordResetMessage] = useState("")
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false)
   const exportCount = exportKind === "all"
     ? entries.length
     : entries.filter((entry) => entry.kind === exportKind).length
 
+  async function resetPassword() {
+    setPasswordResetLoading(true)
+    setPasswordResetMessage("")
+
+    try {
+      await onResetPassword()
+      setPasswordResetMessage("Письмо для смены пароля отправлено на email аккаунта.")
+    } catch (error) {
+      setPasswordResetMessage(error instanceof Error ? error.message : "Не удалось отправить письмо")
+    } finally {
+      setPasswordResetLoading(false)
+    }
+  }
+
   return (
     <>
-      <header className="border-b pb-5">
+      <header>
         <h2 className="text-xl font-semibold tracking-normal">Настройки</h2>
       </header>
 
@@ -705,6 +735,15 @@ function SettingsPage({
                   <span className="text-muted-foreground">Доступ</span>
                   <div className="flex items-center gap-3">
                     <span className="font-medium">{authEmail || "Авторизован"}</span>
+                    <Button
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      onClick={() => void resetPassword()}
+                      disabled={passwordResetLoading || !authEmail}
+                    >
+                      {passwordResetLoading ? "Отправка..." : "Сменить пароль"}
+                    </Button>
                     <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
                       Выйти
                     </Button>
@@ -721,6 +760,11 @@ function SettingsPage({
                 ? "Данные сохраняются в Firestore в коллекции healthUsers/{uid}/entries."
                 : "Данные сохраняются локально в браузере. Firebase включится после заполнения .env и перезапуска dev-сервера."}
             </p>
+            {passwordResetMessage ? (
+              <p className="rounded-md bg-muted px-3 py-2 text-muted-foreground">
+                {passwordResetMessage}
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -808,8 +852,8 @@ function NutritionTable({
           <TableHead className="w-24 text-right">Ккал</TableHead>
           <TableHead className="w-24 text-right">Белки</TableHead>
           <TableHead className="w-24 text-right">Жиры</TableHead>
-          <TableHead className="w-24 text-right">Углев.</TableHead>
-          <TableHead className="w-24 text-right">Клетч.</TableHead>
+          <TableHead className="w-28 text-right">Углеводы</TableHead>
+          <TableHead className="w-28 text-right">Клетчатка</TableHead>
           <TableHead className="w-24 text-right">Действия</TableHead>
         </TableRow>
       </TableHeader>
@@ -1142,10 +1186,10 @@ function NutritionFields({
       <Field label="Жиры, г">
         <Input value={numberInput(draft.fat)} onChange={(event) => updateNumber("fat", event.target.value)} type="number" min="0" step="0.1" />
       </Field>
-      <Field label="Углев., г">
+      <Field label="Углеводы, г">
         <Input value={numberInput(draft.carbs)} onChange={(event) => updateNumber("carbs", event.target.value)} type="number" min="0" step="0.1" />
       </Field>
-      <Field label="Клетч., г">
+      <Field label="Клетчатка, г">
         <Input value={numberInput(draft.fiber)} onChange={(event) => updateNumber("fiber", event.target.value)} type="number" min="0" step="0.1" />
       </Field>
     </>
