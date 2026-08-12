@@ -462,7 +462,6 @@ function App() {
                 authUserId={authUser?.uid ?? ""}
                 entries={entries}
                 exportKind={exportKind}
-                syncMode={syncMode}
                 onExport={downloadSectionJson}
                 onExportKindChange={setExportKind}
                 onResetPassword={resetPassword}
@@ -678,7 +677,6 @@ function SettingsPage({
   authUserId,
   entries,
   exportKind,
-  syncMode,
   onExport,
   onExportKindChange,
   onResetPassword,
@@ -689,7 +687,6 @@ function SettingsPage({
   authUserId: string
   entries: HealthEntry[]
   exportKind: ExportKind
-  syncMode: "firebase" | "local"
   onExport: () => void
   onExportKindChange: (kind: ExportKind) => void
   onResetPassword: () => Promise<void>
@@ -725,41 +722,36 @@ function SettingsPage({
         <section className="rounded-md border bg-background p-4 shadow-xs">
           <h3 className="font-semibold">Хранилище</h3>
           <div className="mt-4 grid gap-3 text-sm">
-            <div className="flex items-center justify-between gap-4 border-b pb-3">
-              <span className="text-muted-foreground">Текущий режим</span>
-              <span className="font-medium">{syncMode === "firebase" ? "Firebase / Firestore" : "LocalStorage"}</span>
-            </div>
             {authEnabled ? (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-                  <span className="text-muted-foreground">Доступ</span>
-                  <div className="flex items-center gap-3">
-                    <span className="font-medium">{authEmail || "Авторизован"}</span>
-                    <Button
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                      onClick={() => void resetPassword()}
-                      disabled={passwordResetLoading || !authEmail}
-                    >
-                      {passwordResetLoading ? "Отправка..." : "Сменить пароль"}
-                    </Button>
-                    <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
-                      Выйти
-                    </Button>
-                  </div>
+                  <span className="text-muted-foreground">E-mail при регистрации</span>
+                  <span className="font-medium">{authEmail || "Авторизован"}</span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                  <span className="text-muted-foreground">Смена пароля</span>
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                    onClick={() => void resetPassword()}
+                    disabled={passwordResetLoading || !authEmail}
+                  >
+                    {passwordResetLoading ? "Отправка..." : "Сбросить пароль"}
+                  </Button>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
                   <span className="text-muted-foreground">ID пользователя</span>
                   <span className="max-w-full break-all font-mono text-xs">{authUserId || "-"}</span>
                 </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                  <span className="text-muted-foreground">Выход из аккаунта</span>
+                  <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
+                    Выйти
+                  </Button>
+                </div>
               </>
             ) : null}
-            <p className="leading-6 text-muted-foreground">
-              {syncMode === "firebase"
-                ? "Данные сохраняются в Firestore в коллекции healthUsers/{uid}/entries."
-                : "Данные сохраняются локально в браузере. Firebase включится после заполнения .env и перезапуска dev-сервера."}
-            </p>
             {passwordResetMessage ? (
               <p className="rounded-md bg-muted px-3 py-2 text-muted-foreground">
                 {passwordResetMessage}
