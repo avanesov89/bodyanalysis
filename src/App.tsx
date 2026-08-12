@@ -720,10 +720,14 @@ function SettingsPage({
 
       <div className="mt-6 grid w-full gap-6">
         <section className="rounded-md border bg-background p-4 shadow-xs">
-          <h3 className="font-semibold">Хранилище</h3>
+          <h3 className="font-semibold">Пользователь</h3>
           <div className="mt-4 grid gap-3 text-sm">
             {authEnabled ? (
               <>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                  <span className="text-muted-foreground">ID пользователя</span>
+                  <span className="max-w-full break-all font-mono text-xs">{authUserId || "-"}</span>
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
                   <span className="text-muted-foreground">E-mail при регистрации</span>
                   <span className="font-medium">{authEmail || "Авторизован"}</span>
@@ -740,11 +744,7 @@ function SettingsPage({
                     {passwordResetLoading ? "Отправка..." : "Сбросить пароль"}
                   </Button>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-                  <span className="text-muted-foreground">ID пользователя</span>
-                  <span className="max-w-full break-all font-mono text-xs">{authUserId || "-"}</span>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <span className="text-muted-foreground">Выход из аккаунта</span>
                   <Button size="sm" type="button" variant="outline" onClick={onSignOut}>
                     Выйти
