@@ -899,32 +899,9 @@ function AboutPage() {
             <p>
               Проект сфокусирован на ручном вводе ключевых чисел и выгрузке структурированного JSON для дальнейшего анализа.
             </p>
-          </div>
-        </section>
-
-        <section className="rounded-md border bg-background p-4 shadow-xs">
-          <h3 className="font-semibold">Разделы</h3>
-          <div className="mt-4 grid gap-3 text-sm">
-            <div className="flex items-center justify-between gap-4 border-b pb-3">
-              <span className="text-muted-foreground">Питание</span>
-              <span className="text-right">калории и макронутриенты</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 border-b pb-3">
-              <span className="text-muted-foreground">Тело</span>
-              <span className="text-right">вес, жир, мышцы, вода</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 border-b pb-3">
-              <span className="text-muted-foreground">Активность</span>
-              <span className="text-right">активные калории и шаги</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 border-b pb-3">
-              <span className="text-muted-foreground">Замеры</span>
-              <span className="text-right">основные окружности тела</span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">Заметка</span>
-              <span className="text-right">сон, стресс и самочувствие</span>
-            </div>
+            <p>
+              Сейчас это MVP-версия: проект будет постепенно улучшаться, расширяться и дорабатываться по мере использования.
+            </p>
           </div>
         </section>
       </div>
