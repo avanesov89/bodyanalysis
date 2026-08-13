@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -9,10 +10,15 @@ import {
 } from "firebase/firestore"
 
 import { getDb, getFirebaseUserScope } from "@/lib/firebase"
-import type { EntryDraft, HealthEntry, SyncMode } from "@/types/health"
+import type { EntryDraft, HealthEntry, HealthGoal, Lifestyle, SyncMode, UserGender, UserProfile } from "@/types/health"
 
 const storageKey = "body-analysis.entries.v1"
+const profileStorageKey = "body-analysis.profile.v1"
 const firestoreTimeoutMs = 12_000
+
+const genderValues: UserGender[] = ["male", "female"]
+const goalValues: HealthGoal[] = ["weight_loss", "muscle_gain", "maintenance"]
+const lifestyleValues: Lifestyle[] = ["sedentary", "moderate", "active", "very_active"]
 
 type LegacyEntry = HealthEntry & {
   activityType?: string
@@ -42,6 +48,10 @@ function newId() {
 
 function cleanEntry(entry: HealthEntry) {
   return JSON.parse(JSON.stringify(entry)) as HealthEntry
+}
+
+function cleanProfile(profile: UserProfile) {
+  return JSON.parse(JSON.stringify(profile)) as UserProfile
 }
 
 function normalizeEntry(entry: LegacyEntry) {
@@ -96,6 +106,45 @@ function localWrite(entries: HealthEntry[]) {
   localStorage.setItem(storageKey, JSON.stringify(entries))
 }
 
+function normalizeProfile(profile: Partial<UserProfile> | null | undefined) {
+  if (!profile) return {}
+
+  const next: UserProfile = {}
+
+  if (profile.gender && genderValues.includes(profile.gender)) {
+    next.gender = profile.gender
+  }
+
+  if (typeof profile.age === "number" && Number.isFinite(profile.age) && profile.age > 0) {
+    next.age = Math.round(profile.age)
+  }
+
+  if (profile.goal && goalValues.includes(profile.goal)) {
+    next.goal = profile.goal
+  }
+
+  if (profile.lifestyle && lifestyleValues.includes(profile.lifestyle)) {
+    next.lifestyle = profile.lifestyle
+  }
+
+  return cleanProfile(next)
+}
+
+function localReadProfile() {
+  const raw = localStorage.getItem(profileStorageKey)
+  if (!raw) return {}
+
+  try {
+    return normalizeProfile(JSON.parse(raw) as Partial<UserProfile>)
+  } catch {
+    return {}
+  }
+}
+
+function localWriteProfile(profile: UserProfile) {
+  localStorage.setItem(profileStorageKey, JSON.stringify(normalizeProfile(profile)))
+}
+
 function formatFirestoreError(error: unknown, action: string) {
   if (error instanceof Error) {
     return new Error(`${action}: ${error.message}`)
@@ -133,6 +182,13 @@ function entriesCollection() {
   return collection(db, "healthUsers", getFirebaseUserScope(), "entries")
 }
 
+function profileDocument() {
+  const db = getDb()
+  if (!db) return null
+
+  return doc(db, "healthUsers", getFirebaseUserScope(), "profile", "settings")
+}
+
 export function getSyncMode(): SyncMode {
   return entriesCollection() ? "firebase" : "local"
 }
@@ -145,6 +201,16 @@ export async function listEntries(): Promise<HealthEntry[]> {
 
   const snapshot = await withFirestoreTimeout(getDocs(query(ref, orderBy("date", "desc"))), "Загрузка данных")
   return snapshot.docs.map((item) => normalizeEntry(item.data() as LegacyEntry))
+}
+
+export async function getUserProfile(): Promise<UserProfile> {
+  const ref = profileDocument()
+  if (!ref) {
+    return localReadProfile()
+  }
+
+  const snapshot = await withFirestoreTimeout(getDoc(ref), "Загрузка профиля")
+  return normalizeProfile(snapshot.exists() ? snapshot.data() : null)
 }
 
 export async function upsertEntry(
@@ -182,6 +248,19 @@ export async function removeEntry(id: string) {
   }
 
   await withFirestoreTimeout(deleteDoc(doc(ref, id)), "Удаление записи")
+}
+
+export async function upsertUserProfile(profile: UserProfile): Promise<UserProfile> {
+  const nextProfile = normalizeProfile(profile)
+  const ref = profileDocument()
+
+  if (!ref) {
+    localWriteProfile(nextProfile)
+    return nextProfile
+  }
+
+  await withFirestoreTimeout(setDoc(ref, nextProfile), "Сохранение профиля")
+  return nextProfile
 }
 
 export function buildExampleEntries(): EntryDraft[] {

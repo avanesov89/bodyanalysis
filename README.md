@@ -11,7 +11,7 @@
 - активность: дата, активные калории, шаги;
 - замеры: талия, грудь, бедра, ягодицы, бицепс, плечи;
 - заметки: настроение, сон, стресс;
-- настройки: режим хранилища и выгрузка JSON по разделу или всех данных.
+- настройки: профиль для анализа, режим хранилища и выгрузка JSON + промта по разделу или всех данных.
 
 Подробный контекст проекта для продолжения работы в новом чате лежит в [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md).
 
@@ -54,6 +54,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /healthUsers/{userId}/entries/{entryId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    match /healthUsers/{userId}/profile/{documentId} {
       allow read, write: if request.auth != null
         && request.auth.uid == userId;
     }

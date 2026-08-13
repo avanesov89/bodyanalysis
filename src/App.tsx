@@ -4,12 +4,14 @@ import {
   ArrowDown,
   ArrowUp,
   BarChart3,
+  CircleHelp,
   Download,
   Dumbbell,
   Info,
   Moon,
   Pencil,
   Plus,
+  Save,
   Scale,
   Settings,
   ShieldCheck,
@@ -40,15 +42,16 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { firebaseAuthEmail, getAuthClient, isFirebaseConfigured } from "@/lib/firebase"
-import { getSyncMode, listEntries, removeEntry, upsertEntry } from "@/lib/health-store"
-import type { EntryDraft, EntryKind, HealthEntry } from "@/types/health"
-import { kindLabels } from "@/types/health"
+import { getSyncMode, getUserProfile, listEntries, removeEntry, upsertEntry, upsertUserProfile } from "@/lib/health-store"
+import type { EntryDraft, EntryKind, HealthEntry, UserProfile } from "@/types/health"
+import { genderLabels, goalLabels, kindLabels, lifestyleDescriptions, lifestyleLabels } from "@/types/health"
 
 const kindOptions: EntryKind[] = ["nutrition", "body", "activity", "measurements", "note"]
 type AppPage = EntryKind | "settings" | "about"
 type ExportKind = EntryKind | "all"
 type ThemeMode = "light" | "dark"
 const themeStorageKey = "body-analysis.theme.v1"
+const unsetSelectValue = "not_set"
 
 const kindIcons: Record<EntryKind, typeof Utensils> = {
   nutrition: Utensils,
@@ -104,6 +107,75 @@ function sortEntriesDesc(entries: HealthEntry[]) {
   })
 }
 
+function downloadTextFile(content: string, type: string, filename: string) {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  document.body.append(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function exportProfile(profile: UserProfile) {
+  return {
+    gender: profile.gender ?? null,
+    genderLabel: profile.gender ? genderLabels[profile.gender] : null,
+    age: profile.age ?? null,
+    goal: profile.goal ?? null,
+    goalLabel: profile.goal ? goalLabels[profile.goal] : null,
+    lifestyle: profile.lifestyle ?? null,
+    lifestyleLabel: profile.lifestyle ? lifestyleLabels[profile.lifestyle] : null,
+    lifestyleDescription: profile.lifestyle ? lifestyleDescriptions[profile.lifestyle] : null,
+  }
+}
+
+function buildPromptMarkdown({
+  exportedAt,
+  exportKind,
+  profile,
+  recordCount,
+}: {
+  exportedAt: string
+  exportKind: ExportKind
+  profile: UserProfile
+  recordCount: number
+}) {
+  const sectionLabel = exportKind === "all" ? "Все разделы" : kindLabels[exportKind]
+
+  return [
+    "# Промт для анализа данных тела",
+    "",
+    "Ты - нейросетевой помощник по анализу личного журнала питания, тела, активности, замеров и самочувствия.",
+    "Проанализируй приложенный JSON-файл и дай практичные выводы по динамике, рискам, гипотезам и следующим шагам.",
+    "",
+    "## Контекст пользователя",
+    "",
+    `- Пол: ${profile.gender ? genderLabels[profile.gender] : "не указан"}`,
+    `- Возраст: ${profile.age ? `${profile.age} лет` : "не указан"}`,
+    `- Цель: ${profile.goal ? goalLabels[profile.goal] : "не указана"}`,
+    `- Образ жизни: ${profile.lifestyle ? `${lifestyleLabels[profile.lifestyle]} (${lifestyleDescriptions[profile.lifestyle]})` : "не указан"}`,
+    "",
+    "## Данные выгрузки",
+    "",
+    `- Дата выгрузки: ${exportedAt}`,
+    `- Раздел: ${sectionLabel}`,
+    `- Количество записей: ${recordCount}`,
+    "",
+    "## Задача",
+    "",
+    "1. Сначала кратко опиши, что видно по данным.",
+    "2. Отдельно отметь положительную динамику и возможные проблемные места.",
+    "3. Дай рекомендации с учетом пола, возраста, цели и образа жизни.",
+    "4. Не ставь диагнозы и не заменяй врача; если данных недостаточно, прямо укажи, каких данных не хватает.",
+    "",
+    "Это MVP-промт. Его текст будет заменен на финальную версию позже.",
+    "",
+  ].join("\n")
+}
+
 function TrendValue({
   value,
   previousValue,
@@ -135,10 +207,28 @@ function TrendValue({
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, help, children }: { label: string; help?: ReactNode; children: ReactNode }) {
   return (
     <div className="grid gap-2">
-      <Label>{label}</Label>
+      <div className="flex min-h-5 items-center gap-1.5">
+        <Label>{label}</Label>
+        {help ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus:ring-2 focus:ring-ring"
+                aria-label={`Подсказка: ${label}`}
+              >
+                <CircleHelp className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-80 bg-zinc-950 p-3 text-white shadow-md">
+              {help}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
       {children}
     </div>
   )
@@ -146,6 +236,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function App() {
   const [entries, setEntries] = useState<HealthEntry[]>([])
+  const [userProfile, setUserProfile] = useState<UserProfile>({})
   const [authReady, setAuthReady] = useState(!isFirebaseConfigured())
   const [authUser, setAuthUser] = useState<User | null>(null)
   const [activePage, setActivePage] = useState<AppPage>("nutrition")
@@ -178,6 +269,12 @@ function App() {
 
     try {
       setEntries(await listEntries())
+
+      try {
+        setUserProfile(await getUserProfile())
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Не удалось загрузить профиль")
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось загрузить данные")
     } finally {
@@ -340,24 +437,37 @@ function App() {
     }
   }
 
+  async function saveUserProfile(profile: UserProfile) {
+    const saved = await upsertUserProfile(profile)
+    setUserProfile(saved)
+    setMessage(syncMode === "firebase" ? "Профиль сохранен в Firebase" : "Профиль сохранен локально")
+  }
+
   function downloadSectionJson() {
     const sectionEntries = exportKind === "all"
       ? entries
       : entries.filter((entry) => entry.kind === exportKind)
+    const exportedAt = new Date().toISOString()
     const payload = {
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       section: exportKind,
       sectionLabel: exportKind === "all" ? "Все разделы" : kindLabels[exportKind],
       count: sectionEntries.length,
+      userProfile: exportProfile(userProfile),
       entries: sectionEntries,
     }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `body-analysis-${exportKind}-${today()}.json`
-    link.click()
-    URL.revokeObjectURL(url)
+    const baseFilename = `body-analysis-${exportKind}-${today()}`
+    downloadTextFile(JSON.stringify(payload, null, 2), "application/json", `${baseFilename}.json`)
+    downloadTextFile(
+      buildPromptMarkdown({
+        exportedAt,
+        exportKind,
+        profile: userProfile,
+        recordCount: sectionEntries.length,
+      }),
+      "text/markdown;charset=utf-8",
+      `${baseFilename}-prompt.md`,
+    )
   }
 
   if (!authReady) {
@@ -369,7 +479,7 @@ function App() {
   }
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={0} skipDelayDuration={0}>
       <main className="min-h-svh bg-background">
         <div className="mx-auto grid max-w-[1380px] gap-0 lg:grid-cols-[248px_minmax(0,1fr)]">
           <aside className="border-b bg-background px-5 py-5 lg:relative lg:min-h-svh lg:border-b-0 lg:after:absolute lg:after:top-5 lg:after:right-0 lg:after:bottom-5 lg:after:border-r lg:after:border-[var(--border)] lg:after:content-['']">
@@ -444,9 +554,11 @@ function App() {
                 entries={entries}
                 exportKind={exportKind}
                 themeMode={themeMode}
+                userProfile={userProfile}
                 onExport={downloadSectionJson}
                 onExportKindChange={setExportKind}
                 onResetPassword={resetPassword}
+                onSaveUserProfile={saveUserProfile}
                 onSignOut={signOutUser}
                 onThemeModeChange={setThemeMode}
               />
@@ -663,9 +775,11 @@ function SettingsPage({
   entries,
   exportKind,
   themeMode,
+  userProfile,
   onExport,
   onExportKindChange,
   onResetPassword,
+  onSaveUserProfile,
   onSignOut,
   onThemeModeChange,
 }: {
@@ -675,17 +789,55 @@ function SettingsPage({
   entries: HealthEntry[]
   exportKind: ExportKind
   themeMode: ThemeMode
+  userProfile: UserProfile
   onExport: () => void
   onExportKindChange: (kind: ExportKind) => void
   onResetPassword: () => Promise<void>
+  onSaveUserProfile: (profile: UserProfile) => Promise<void>
   onSignOut: () => void
   onThemeModeChange: (theme: ThemeMode) => void
 }) {
+  const [profileDraft, setProfileDraft] = useState<UserProfile>(userProfile)
+  const [profileMessage, setProfileMessage] = useState("")
+  const [profileSaving, setProfileSaving] = useState(false)
   const [passwordResetMessage, setPasswordResetMessage] = useState("")
   const [passwordResetLoading, setPasswordResetLoading] = useState(false)
   const exportCount = exportKind === "all"
     ? entries.length
     : entries.filter((entry) => entry.kind === exportKind).length
+
+  useEffect(() => {
+    setProfileDraft(userProfile)
+  }, [userProfile])
+
+  function updateProfile(key: keyof UserProfile, value: string) {
+    setProfileDraft((current) => ({
+      ...current,
+      [key]: value === unsetSelectValue || value === "" ? undefined : value,
+    }))
+  }
+
+  function updateProfileAge(value: string) {
+    setProfileDraft((current) => ({
+      ...current,
+      age: value === "" ? undefined : Number(value),
+    }))
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setProfileSaving(true)
+    setProfileMessage("")
+
+    try {
+      await onSaveUserProfile(profileDraft)
+      setProfileMessage("Профиль сохранен. Эти данные попадут в следующую выгрузку.")
+    } catch (error) {
+      setProfileMessage(error instanceof Error ? error.message : "Не удалось сохранить профиль")
+    } finally {
+      setProfileSaving(false)
+    }
+  }
 
   async function resetPassword() {
     setPasswordResetLoading(true)
@@ -749,6 +901,92 @@ function SettingsPage({
           </div>
         </section>
 
+        <form onSubmit={saveProfile} className="rounded-md border bg-background p-4 shadow-xs">
+          <h3 className="font-semibold">Профиль для анализа</h3>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Field label="Пол">
+              <Select value={profileDraft.gender ?? unsetSelectValue} onValueChange={(value) => updateProfile("gender", value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={unsetSelectValue}>Не указан</SelectItem>
+                  <SelectItem value="male">{genderLabels.male}</SelectItem>
+                  <SelectItem value="female">{genderLabels.female}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Возраст">
+              <Input
+                value={numberInput(profileDraft.age)}
+                onChange={(event) => updateProfileAge(event.target.value)}
+                type="number"
+                min="1"
+                max="120"
+                placeholder="Например, 35"
+              />
+            </Field>
+            <Field label="Цель">
+              <Select value={profileDraft.goal ?? unsetSelectValue} onValueChange={(value) => updateProfile("goal", value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={unsetSelectValue}>Не указана</SelectItem>
+                  <SelectItem value="weight_loss">{goalLabels.weight_loss}</SelectItem>
+                  <SelectItem value="muscle_gain">{goalLabels.muscle_gain}</SelectItem>
+                  <SelectItem value="maintenance">{goalLabels.maintenance}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field
+              label="Образ жизни"
+              help={
+                <div className="grid gap-2 text-xs leading-5">
+                  <p>
+                    <span className="font-medium">{lifestyleLabels.sedentary}:</span>{" "}
+                    {lifestyleDescriptions.sedentary}
+                  </p>
+                  <p>
+                    <span className="font-medium">{lifestyleLabels.moderate}:</span>{" "}
+                    {lifestyleDescriptions.moderate}
+                  </p>
+                  <p>
+                    <span className="font-medium">{lifestyleLabels.active}:</span>{" "}
+                    {lifestyleDescriptions.active}
+                  </p>
+                  <p>
+                    <span className="font-medium">{lifestyleLabels.very_active}:</span>{" "}
+                    {lifestyleDescriptions.very_active}
+                  </p>
+                </div>
+              }
+            >
+              <Select value={profileDraft.lifestyle ?? unsetSelectValue} onValueChange={(value) => updateProfile("lifestyle", value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={unsetSelectValue}>Не указан</SelectItem>
+                  <SelectItem value="sedentary">{lifestyleLabels.sedentary}</SelectItem>
+                  <SelectItem value="moderate">{lifestyleLabels.moderate}</SelectItem>
+                  <SelectItem value="active">{lifestyleLabels.active}</SelectItem>
+                  <SelectItem value="very_active">{lifestyleLabels.very_active}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button size="sm" type="submit" disabled={profileSaving}>
+              <Save className="size-4" />
+              {profileSaving ? "Сохранение..." : "Сохранить профиль"}
+            </Button>
+            {profileMessage ? (
+              <p className="text-sm text-muted-foreground">{profileMessage}</p>
+            ) : null}
+          </div>
+        </form>
+
         <section className="rounded-md border bg-background p-4 shadow-xs">
           <h3 className="font-semibold">Оформление</h3>
           <div className="mt-4 grid gap-3 text-sm">
@@ -787,7 +1025,7 @@ function SettingsPage({
         </section>
 
         <section className="rounded-md border bg-background p-4 shadow-xs">
-          <h3 className="font-semibold">Выгрузка JSON</h3>
+          <h3 className="font-semibold">Выгрузка JSON и промта</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <Field label="Раздел">
               <Select value={exportKind} onValueChange={(value) => onExportKindChange(value as ExportKind)}>
@@ -806,11 +1044,11 @@ function SettingsPage({
             </Field>
             <Button type="button" onClick={onExport} disabled={exportCount === 0}>
               <Download className="size-4" />
-              Скачать JSON
+              Скачать JSON и промт
             </Button>
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Записей для выгрузки: {exportCount}
+            Записей для выгрузки: {exportCount}. В промт попадут пол, возраст, цель и образ жизни из профиля.
           </p>
         </section>
       </div>
