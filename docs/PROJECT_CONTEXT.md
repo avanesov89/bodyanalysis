@@ -211,16 +211,20 @@ updatedAt: string
 healthUsers/{uid}/profile/settings
 ```
 
-## Экспорт JSON и промта
+## Экспорт архива для анализа
 
 Экспорт находится на странице `Настройки`.
 
 Селект по умолчанию стоит на `Выгрузить все`.
 
-По клику скачиваются два файла:
+По клику скачивается ZIP-архив:
 
-- `body-analysis-{section}-{date}.json`;
-- `body-analysis-{section}-{date}-prompt.md`.
+- `body-analysis-{section}-{date}.zip`.
+
+Внутри архива два файла:
+
+- `body-analysis-{section}-{date}.json` — данные выбранного раздела или всех разделов;
+- `body-analysis-{section}-{date}-prompt.md` — настройки пользователя и инструкция для анализа данных.
 
 Формат JSON payload:
 

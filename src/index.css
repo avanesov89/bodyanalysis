@@ -32,9 +32,9 @@
 
 :root {
   --radius: 0.5rem;
-  --background: oklch(0.985 0.002 248);
+  --background: oklch(0.955 0.006 248);
   --foreground: oklch(0.18 0.013 248);
-  --card: oklch(1 0 0);
+  --card: oklch(0.995 0.001 248);
   --card-foreground: oklch(0.18 0.013 248);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.18 0.013 248);
@@ -42,13 +42,13 @@
   --primary-foreground: oklch(0.985 0.002 248);
   --secondary: color-mix(in oklab, var(--primary) 10%, white);
   --secondary-foreground: color-mix(in oklab, var(--primary) 58%, black);
-  --muted: oklch(0.94 0.006 248);
+  --muted: oklch(0.91 0.008 248);
   --muted-foreground: oklch(0.48 0.018 248);
   --accent: oklch(0.86 0.08 93);
   --accent-foreground: oklch(0.24 0.02 76);
   --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.88 0.01 248);
-  --input: oklch(0.88 0.01 248);
+  --border: oklch(0.84 0.012 248);
+  --input: oklch(0.84 0.012 248);
   --ring: color-mix(in oklab, var(--primary) 78%, white);
 }
 

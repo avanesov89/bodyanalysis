@@ -43,6 +43,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { firebaseAuthEmail, getAuthClient, isFirebaseConfigured } from "@/lib/firebase"
 import { getSyncMode, getUserProfile, listEntries, removeEntry, upsertEntry, upsertUserProfile, type UserProfileSaveResult } from "@/lib/health-store"
+import analysisPromptMarkdown from "@/lib/analysis-prompt.md?raw"
 import type { EntryDraft, EntryKind, HealthEntry, UserProfile } from "@/types/health"
 import { genderLabels, goalLabels, kindLabels, lifestyleDescriptions, lifestyleLabels } from "@/types/health"
 
@@ -180,8 +181,103 @@ function sortEntriesDesc(entries: HealthEntry[]) {
   })
 }
 
-function downloadTextFile(content: string, type: string, filename: string) {
-  const blob = new Blob([content], { type })
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff
+
+  for (const byte of bytes) {
+    crc ^= byte
+
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1
+    }
+  }
+
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function writeUint16(view: DataView, offset: number, value: number) {
+  view.setUint16(offset, value, true)
+}
+
+function writeUint32(view: DataView, offset: number, value: number) {
+  view.setUint32(offset, value, true)
+}
+
+function createZip(files: Array<{ filename: string; content: string }>) {
+  const encoder = new TextEncoder()
+  const localChunks: Uint8Array[] = []
+  const centralChunks: Uint8Array[] = []
+  let offset = 0
+
+  for (const file of files) {
+    const nameBytes = encoder.encode(file.filename)
+    const dataBytes = encoder.encode(file.content)
+    const checksum = crc32(dataBytes)
+    const localOffset = offset
+
+    const localHeader = new Uint8Array(30 + nameBytes.length)
+    const localView = new DataView(localHeader.buffer)
+    writeUint32(localView, 0, 0x04034b50)
+    writeUint16(localView, 4, 20)
+    writeUint16(localView, 6, 0x0800)
+    writeUint16(localView, 8, 0)
+    writeUint16(localView, 10, 0)
+    writeUint16(localView, 12, 0)
+    writeUint32(localView, 14, checksum)
+    writeUint32(localView, 18, dataBytes.length)
+    writeUint32(localView, 22, dataBytes.length)
+    writeUint16(localView, 26, nameBytes.length)
+    writeUint16(localView, 28, 0)
+    localHeader.set(nameBytes, 30)
+    localChunks.push(localHeader, dataBytes)
+    offset += localHeader.length + dataBytes.length
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length)
+    const centralView = new DataView(centralHeader.buffer)
+    writeUint32(centralView, 0, 0x02014b50)
+    writeUint16(centralView, 4, 20)
+    writeUint16(centralView, 6, 20)
+    writeUint16(centralView, 8, 0x0800)
+    writeUint16(centralView, 10, 0)
+    writeUint16(centralView, 12, 0)
+    writeUint16(centralView, 14, 0)
+    writeUint32(centralView, 16, checksum)
+    writeUint32(centralView, 20, dataBytes.length)
+    writeUint32(centralView, 24, dataBytes.length)
+    writeUint16(centralView, 28, nameBytes.length)
+    writeUint16(centralView, 30, 0)
+    writeUint16(centralView, 32, 0)
+    writeUint16(centralView, 34, 0)
+    writeUint16(centralView, 36, 0)
+    writeUint32(centralView, 38, 0)
+    writeUint32(centralView, 42, localOffset)
+    centralHeader.set(nameBytes, 46)
+    centralChunks.push(centralHeader)
+  }
+
+  const centralOffset = offset
+  const centralSize = centralChunks.reduce((sum, chunk) => sum + chunk.length, 0)
+  const endHeader = new Uint8Array(22)
+  const endView = new DataView(endHeader.buffer)
+  writeUint32(endView, 0, 0x06054b50)
+  writeUint16(endView, 4, 0)
+  writeUint16(endView, 6, 0)
+  writeUint16(endView, 8, files.length)
+  writeUint16(endView, 10, files.length)
+  writeUint32(endView, 12, centralSize)
+  writeUint32(endView, 16, centralOffset)
+  writeUint16(endView, 20, 0)
+
+  const blobParts = [...localChunks, ...centralChunks, endHeader].map((chunk) => {
+    const copy = new ArrayBuffer(chunk.byteLength)
+    new Uint8Array(copy).set(chunk)
+    return copy
+  })
+
+  return new Blob(blobParts, { type: "application/zip" })
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement("a")
   link.href = url
@@ -219,32 +315,22 @@ function buildPromptMarkdown({
   const sectionLabel = exportKind === "all" ? "Все разделы" : kindLabels[exportKind]
 
   return [
-    "# Промт для анализа данных тела",
+    "# Контекст для анализа данных тела",
     "",
-    "Ты - нейросетевой помощник по анализу личного журнала питания, тела, активности, замеров, сна и самочувствия.",
-    "Проанализируй приложенный JSON-файл и дай практичные выводы по динамике, рискам, гипотезам и следующим шагам.",
-    "",
-    "## Контекст пользователя",
+    "## Настройки пользователя",
     "",
     `- Пол: ${profile.gender ? genderLabels[profile.gender] : "не указан"}`,
     `- Возраст: ${profile.age ? `${profile.age} лет` : "не указан"}`,
     `- Цель: ${profile.goal ? goalLabels[profile.goal] : "не указана"}`,
     `- Образ жизни: ${profile.lifestyle ? `${lifestyleLabels[profile.lifestyle]} (${lifestyleDescriptions[profile.lifestyle]})` : "не указан"}`,
     "",
+    analysisPromptMarkdown.trim(),
+    "",
     "## Данные выгрузки",
     "",
     `- Дата выгрузки: ${exportedAt}`,
     `- Раздел: ${sectionLabel}`,
     `- Количество записей: ${recordCount}`,
-    "",
-    "## Задача",
-    "",
-    "1. Сначала кратко опиши, что видно по данным.",
-    "2. Отдельно отметь положительную динамику и возможные проблемные места.",
-    "3. Дай рекомендации с учетом пола, возраста, цели и образа жизни.",
-    "4. Не ставь диагнозы и не заменяй врача; если данных недостаточно, прямо укажи, каких данных не хватает.",
-    "",
-    "Это MVP-промт. Его текст будет заменен на финальную версию позже.",
     "",
   ].join("\n")
 }
@@ -531,17 +617,22 @@ function App() {
       entries: sectionEntries,
     }
     const baseFilename = `body-analysis-${exportKind}-${today()}`
-    downloadTextFile(JSON.stringify(payload, null, 2), "application/json", `${baseFilename}.json`)
-    downloadTextFile(
-      buildPromptMarkdown({
-        exportedAt,
-        exportKind,
-        profile: userProfile,
-        recordCount: sectionEntries.length,
-      }),
-      "text/markdown;charset=utf-8",
-      `${baseFilename}-prompt.md`,
-    )
+    const archive = createZip([
+      {
+        filename: `${baseFilename}.json`,
+        content: JSON.stringify(payload, null, 2),
+      },
+      {
+        filename: `${baseFilename}-prompt.md`,
+        content: buildPromptMarkdown({
+          exportedAt,
+          exportKind,
+          profile: userProfile,
+          recordCount: sectionEntries.length,
+        }),
+      },
+    ])
+    downloadBlob(archive, `${baseFilename}.zip`)
   }
 
   if (!authReady) {
@@ -556,7 +647,7 @@ function App() {
     <TooltipProvider delayDuration={0} skipDelayDuration={0}>
       <main className="min-h-svh bg-background">
         <div className="mx-auto grid max-w-[1380px] gap-0 lg:grid-cols-[248px_minmax(0,1fr)]">
-          <aside className="border-b bg-background px-5 py-5 lg:relative lg:min-h-svh lg:border-b-0 lg:after:absolute lg:after:top-5 lg:after:right-0 lg:after:bottom-5 lg:after:border-r lg:after:border-[var(--border)] lg:after:content-['']">
+          <aside className="border-b px-5 py-5 lg:relative lg:min-h-svh lg:border-b-0 lg:after:absolute lg:after:top-5 lg:after:right-0 lg:after:bottom-5 lg:after:border-r lg:after:border-[var(--border)] lg:after:content-['']">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
                 <Activity className="size-5" />
@@ -579,7 +670,7 @@ function App() {
                     className={[
                       "flex h-9 items-center gap-3 rounded-md px-3 text-left transition-colors",
                       isActive
-                        ? "bg-secondary text-secondary-foreground"
+                        ? "border border-primary/25 bg-primary/12 text-primary"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     ].join(" ")}
                   >
@@ -595,7 +686,7 @@ function App() {
                   className={[
                     "flex h-9 w-full items-center gap-3 rounded-md px-3 text-left transition-colors",
                     activePage === "settings"
-                      ? "bg-secondary text-secondary-foreground"
+                      ? "border border-primary/25 bg-primary/12 text-primary"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   ].join(" ")}
                 >
@@ -608,7 +699,7 @@ function App() {
                   className={[
                     "mt-2 flex h-9 w-full items-center gap-3 rounded-md px-3 text-left transition-colors",
                     activePage === "about"
-                      ? "bg-secondary text-secondary-foreground"
+                      ? "border border-primary/25 bg-primary/12 text-primary"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   ].join(" ")}
                 >
@@ -676,7 +767,7 @@ function App() {
                   ) : null}
 
                   <section>
-                    <div className="overflow-hidden rounded-md border bg-background">
+                    <div className="overflow-hidden rounded-md border bg-card">
                       {selectedKind === "nutrition" ? (
                         <NutritionTable
                           entries={sectionEntries}
@@ -737,9 +828,9 @@ function SectionIntro({ kind }: { kind: EntryKind }) {
   const description = kindDescriptions[kind]
 
   return (
-    <section className="rounded-md border bg-muted/30 px-4 py-3">
+    <section className="rounded-md border bg-card px-4 py-3">
       <div className="flex gap-3">
-        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
           <Icon className="size-4" />
         </div>
         <p className="text-sm leading-[1.4] text-muted-foreground">{description}</p>
@@ -795,7 +886,7 @@ function LoginPage({
 
   return (
     <main className="grid min-h-svh place-items-center bg-background px-4">
-      <form onSubmit={submitAuth} className="grid w-full max-w-sm gap-5 rounded-md border bg-background p-5 shadow-xs">
+      <form onSubmit={submitAuth} className="grid w-full max-w-sm gap-5 rounded-md border bg-card p-5 shadow-xs">
         <div className="grid gap-2">
           <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <ShieldCheck className="size-5" />
@@ -813,7 +904,7 @@ function LoginPage({
             type="button"
             className={[
               "h-9 rounded-sm transition-colors",
-              mode === "signIn" ? "bg-background font-medium shadow-xs" : "text-muted-foreground",
+              mode === "signIn" ? "bg-card font-medium shadow-xs" : "text-muted-foreground",
             ].join(" ")}
             onClick={() => {
               setMode("signIn")
@@ -827,7 +918,7 @@ function LoginPage({
             type="button"
             className={[
               "h-9 rounded-sm transition-colors",
-              mode === "signUp" ? "bg-background font-medium shadow-xs" : "text-muted-foreground",
+              mode === "signUp" ? "bg-card font-medium shadow-xs" : "text-muted-foreground",
             ].join(" ")}
             onClick={() => {
               setMode("signUp")
@@ -963,7 +1054,7 @@ function SettingsPage({
       </header>
 
       <div className="mt-6 grid w-full gap-6">
-        <section className="rounded-md border bg-background p-4 shadow-xs">
+        <section className="rounded-md border bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Пользователь</h3>
           <div className="mt-4 grid gap-3 text-sm">
             {authEnabled ? (
@@ -1004,7 +1095,7 @@ function SettingsPage({
           </div>
         </section>
 
-        <form onSubmit={saveProfile} className="rounded-md border bg-background p-4 shadow-xs">
+        <form onSubmit={saveProfile} className="rounded-md border bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Профиль для анализа</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Пол">
@@ -1090,7 +1181,7 @@ function SettingsPage({
           </div>
         </form>
 
-        <section className="rounded-md border bg-background p-4 shadow-xs">
+        <section className="rounded-md border bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Оформление</h3>
           <div className="mt-4 grid gap-3 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1102,7 +1193,7 @@ function SettingsPage({
                   className={[
                     "inline-flex h-8 items-center justify-center gap-2 rounded-sm px-3 transition-colors",
                     themeMode === "light"
-                      ? "bg-background font-medium text-foreground shadow-xs"
+                      ? "bg-card font-medium text-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
                   ].join(" ")}
                 >
@@ -1115,7 +1206,7 @@ function SettingsPage({
                   className={[
                     "inline-flex h-8 items-center justify-center gap-2 rounded-sm px-3 transition-colors",
                     themeMode === "dark"
-                      ? "bg-background font-medium text-foreground shadow-xs"
+                      ? "bg-card font-medium text-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
                   ].join(" ")}
                 >
@@ -1127,8 +1218,8 @@ function SettingsPage({
           </div>
         </section>
 
-        <section className="rounded-md border bg-background p-4 shadow-xs">
-          <h3 className="font-semibold">Выгрузка JSON и промта</h3>
+        <section className="rounded-md border bg-card p-4 shadow-xs">
+          <h3 className="font-semibold">Выгрузка архива для анализа</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <Field label="Раздел">
               <Select value={exportKind} onValueChange={(value) => onExportKindChange(value as ExportKind)}>
@@ -1147,11 +1238,11 @@ function SettingsPage({
             </Field>
             <Button type="button" onClick={onExport} disabled={exportCount === 0}>
               <Download className="size-4" />
-              Скачать JSON и промт
+              Скачать ZIP
             </Button>
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Записей для выгрузки: {exportCount}. В промт попадут пол, возраст, цель и образ жизни из профиля.
+            Записей для выгрузки: {exportCount}. В архив попадут JSON с данными и MD-промт с профилем и инструкцией.
           </p>
         </section>
       </div>
@@ -1167,7 +1258,7 @@ function AboutPage() {
       </header>
 
       <div className="mt-6 grid w-full gap-6">
-        <section className="rounded-md border bg-background p-4 shadow-xs">
+        <section className="rounded-md border bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Тело в цифрах</h3>
           <div className="mt-4 grid gap-3 text-sm leading-6 text-muted-foreground">
             <p>
@@ -1565,7 +1656,7 @@ function EntryForm({
   updateNumber: (key: keyof EntryDraft, value: string) => void
 }) {
   return (
-    <form onSubmit={onSubmit} className="rounded-md border bg-background p-4 shadow-xs">
+    <form onSubmit={onSubmit} className="rounded-md border bg-card p-4 shadow-xs">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="font-semibold">{editing ? "Редактировать запись" : "Новая запись"}</h3>
