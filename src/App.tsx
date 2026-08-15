@@ -42,11 +42,11 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { firebaseAuthEmail, getAuthClient, isFirebaseConfigured } from "@/lib/firebase"
-import { getSyncMode, getUserProfile, listEntries, removeEntry, upsertEntry, upsertUserProfile } from "@/lib/health-store"
+import { getSyncMode, getUserProfile, listEntries, removeEntry, upsertEntry, upsertUserProfile, type UserProfileSaveResult } from "@/lib/health-store"
 import type { EntryDraft, EntryKind, HealthEntry, UserProfile } from "@/types/health"
 import { genderLabels, goalLabels, kindLabels, lifestyleDescriptions, lifestyleLabels } from "@/types/health"
 
-const kindOptions: EntryKind[] = ["nutrition", "body", "activity", "measurements", "note"]
+const kindOptions: EntryKind[] = ["nutrition", "body", "activity", "measurements", "sleep", "note"]
 type AppPage = EntryKind | "settings" | "about"
 type ExportKind = EntryKind | "all"
 type ThemeMode = "light" | "dark"
@@ -58,7 +58,17 @@ const kindIcons: Record<EntryKind, typeof Utensils> = {
   body: Scale,
   activity: Dumbbell,
   measurements: BarChart3,
+  sleep: Moon,
   note: Waves,
+}
+
+const kindDescriptions: Record<EntryKind, string> = {
+  nutrition: "Питание показывает энергетический баланс и качество рациона. Калории помогают понимать динамику веса, а БЖУ и клетчатка — восстановление, насыщение и устойчивость режима.",
+  body: "Показатели тела помогают смотреть не только на вес, а на состав и общий тренд. Жир, мышцы, вода и висцеральный жир дают более спокойную картину изменений.",
+  activity: "Активность показывает ежедневный расход энергии вне питания. Шаги и активные калории помогают понять, почему вес движется быстрее или медленнее при похожем рационе.",
+  measurements: "Замеры часто показывают прогресс там, где вес временно стоит. Объемы помогают видеть изменения формы тела, особенно при наборе, похудении или рекомпозиции.",
+  sleep: "Сон влияет на восстановление, аппетит, стресс и качество тренировок. Недосып может мешать как похудению, так и набору мышц.",
+  note: "Заметки дают контекст к цифрам. Настроение и стресс помогают объяснить скачки веса, голода, активности или режима, которые не видны в таблицах сами по себе.",
 }
 
 function today() {
@@ -82,6 +92,69 @@ function emptyDraft(kind: EntryKind = "nutrition"): EntryDraft {
   return {
     kind,
     date: today(),
+  }
+}
+
+function draftForKind(draft: EntryDraft, kind: EntryKind): EntryDraft {
+  const base = {
+    kind,
+    date: draft.date,
+  }
+
+  if (kind === "nutrition") {
+    return {
+      ...base,
+      calories: draft.calories,
+      protein: draft.protein,
+      fat: draft.fat,
+      carbs: draft.carbs,
+      fiber: draft.fiber,
+    }
+  }
+
+  if (kind === "body") {
+    return {
+      ...base,
+      weightKg: draft.weightKg,
+      fatMassKg: draft.fatMassKg,
+      muscleKg: draft.muscleKg,
+      waterPct: draft.waterPct,
+      visceralFat: draft.visceralFat,
+    }
+  }
+
+  if (kind === "activity") {
+    return {
+      ...base,
+      activeCalories: draft.activeCalories,
+      steps: draft.steps,
+    }
+  }
+
+  if (kind === "measurements") {
+    return {
+      ...base,
+      waistCm: draft.waistCm,
+      chestCm: draft.chestCm,
+      hipsCm: draft.hipsCm,
+      glutesCm: draft.glutesCm,
+      bicepsCm: draft.bicepsCm,
+      shouldersCm: draft.shouldersCm,
+    }
+  }
+
+  if (kind === "sleep") {
+    return {
+      ...base,
+      sleepHours: draft.sleepHours,
+      sleepQuality: draft.sleepQuality,
+    }
+  }
+
+  return {
+    ...base,
+    mood: draft.mood,
+    stressLevel: draft.stressLevel,
   }
 }
 
@@ -148,7 +221,7 @@ function buildPromptMarkdown({
   return [
     "# Промт для анализа данных тела",
     "",
-    "Ты - нейросетевой помощник по анализу личного журнала питания, тела, активности, замеров и самочувствия.",
+    "Ты - нейросетевой помощник по анализу личного журнала питания, тела, активности, замеров, сна и самочувствия.",
     "Проанализируй приложенный JSON-файл и дай практичные выводы по динамике, рискам, гипотезам и следующим шагам.",
     "",
     "## Контекст пользователя",
@@ -404,7 +477,7 @@ function App() {
     setMessage("")
 
     try {
-      const saved = await upsertEntry({ ...draft, kind: selectedKind }, editing ?? undefined)
+      const saved = await upsertEntry(draftForKind(draft, selectedKind), editing ?? undefined)
       setEntries((current) => {
         const next = current.some((item) => item.id === saved.id)
           ? current.map((item) => (item.id === saved.id ? saved : item))
@@ -439,8 +512,9 @@ function App() {
 
   async function saveUserProfile(profile: UserProfile) {
     const saved = await upsertUserProfile(profile)
-    setUserProfile(saved)
-    setMessage(syncMode === "firebase" ? "Профиль сохранен в Firebase" : "Профиль сохранен локально")
+    setUserProfile(saved.profile)
+    setMessage(saved.storage === "firebase" ? "Профиль сохранен в Firebase" : "Профиль сохранен локально")
+    return saved
   }
 
   function downloadSectionJson() {
@@ -584,6 +658,8 @@ function App() {
                 </header>
 
                 <div className="mt-6 grid gap-6">
+                  <SectionIntro kind={selectedKind} />
+
                   {message ? <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{message}</p> : null}
 
                   {isFormOpen ? (
@@ -629,6 +705,13 @@ function App() {
                           onEdit={startEdit}
                           onDelete={deleteEntry}
                         />
+                      ) : selectedKind === "sleep" ? (
+                        <SleepTable
+                          entries={sectionEntries}
+                          loading={loading}
+                          onEdit={startEdit}
+                          onDelete={deleteEntry}
+                        />
                       ) : (
                         <NoteTable
                           entries={sectionEntries}
@@ -646,6 +729,22 @@ function App() {
         </div>
       </main>
     </TooltipProvider>
+  )
+}
+
+function SectionIntro({ kind }: { kind: EntryKind }) {
+  const Icon = kindIcons[kind] ?? Activity
+  const description = kindDescriptions[kind]
+
+  return (
+    <section className="rounded-md border bg-muted/30 px-4 py-3">
+      <div className="flex gap-3">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground">
+          <Icon className="size-4" />
+        </div>
+        <p className="text-sm leading-[1.4] text-muted-foreground">{description}</p>
+      </div>
+    </section>
   )
 }
 
@@ -793,7 +892,7 @@ function SettingsPage({
   onExport: () => void
   onExportKindChange: (kind: ExportKind) => void
   onResetPassword: () => Promise<void>
-  onSaveUserProfile: (profile: UserProfile) => Promise<void>
+  onSaveUserProfile: (profile: UserProfile) => Promise<UserProfileSaveResult>
   onSignOut: () => void
   onThemeModeChange: (theme: ThemeMode) => void
 }) {
@@ -830,8 +929,12 @@ function SettingsPage({
     setProfileMessage("")
 
     try {
-      await onSaveUserProfile(profileDraft)
-      setProfileMessage("Профиль сохранен. Эти данные попадут в следующую выгрузку.")
+      const saved = await onSaveUserProfile(profileDraft)
+      setProfileMessage(
+        saved.warning
+          ? "Профиль сохранен локально. Firebase пока не принял профиль; проверь опубликованные Firestore rules."
+          : "Профиль сохранен. Эти данные попадут в следующую выгрузку.",
+      )
     } catch (error) {
       setProfileMessage(error instanceof Error ? error.message : "Не удалось сохранить профиль")
     } finally {
@@ -1068,7 +1171,7 @@ function AboutPage() {
           <h3 className="font-semibold">Тело в цифрах</h3>
           <div className="mt-4 grid gap-3 text-sm leading-6 text-muted-foreground">
             <p>
-              Личный журнал для учета питания, показателей тела, активности, замеров и коротких заметок.
+              Личный журнал для учета питания, показателей тела, активности, замеров, сна и коротких заметок.
             </p>
             <p>
               Проект сфокусирован на ручном вводе ключевых чисел и выгрузке структурированного JSON для дальнейшего анализа.
@@ -1185,7 +1288,6 @@ function NoteTable({
         <TableRow>
           <TableHead className="w-32">Дата</TableHead>
           <TableHead>Настроение</TableHead>
-          <TableHead className="w-28 text-right">Сон, ч</TableHead>
           <TableHead className="w-28 text-right">Стресс</TableHead>
           <TableHead className="w-24 text-right">Действия</TableHead>
         </TableRow>
@@ -1195,7 +1297,6 @@ function NoteTable({
           <TableRow key={entry.id}>
             <TableCell className="font-medium">{entry.date}</TableCell>
             <TableCell>{entry.mood || "-"}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatNumber(entry.sleepHours)}</TableCell>
             <TableCell className="text-right tabular-nums">
               {entry.stressLevel ? `${formatNumber(entry.stressLevel)}/10` : "-"}
             </TableCell>
@@ -1206,7 +1307,53 @@ function NoteTable({
         ))}
         {!loading && entries.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+            <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+              Записей в этом разделе пока нет.
+            </TableCell>
+          </TableRow>
+        ) : null}
+      </TableBody>
+    </Table>
+  )
+}
+
+function SleepTable({
+  entries,
+  loading,
+  onEdit,
+  onDelete,
+}: {
+  entries: HealthEntry[]
+  loading: boolean
+  onEdit: (entry: HealthEntry) => void
+  onDelete: (id: string) => void
+}) {
+  const sortedEntries = useMemo(() => sortEntriesDesc(entries), [entries])
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-32">Дата</TableHead>
+          <TableHead className="w-28 text-right">Сон, ч</TableHead>
+          <TableHead className="w-32 text-right">Качество</TableHead>
+          <TableHead className="w-24 text-right">Действия</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sortedEntries.map((entry) => (
+          <TableRow key={entry.id}>
+            <TableCell className="font-medium">{entry.date}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatNumber(entry.sleepHours)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatNumber(entry.sleepQuality)}</TableCell>
+            <TableCell>
+              <RowActions entry={entry} onEdit={onEdit} onDelete={onDelete} />
+            </TableCell>
+          </TableRow>
+        ))}
+        {!loading && entries.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
               Записей в этом разделе пока нет.
             </TableCell>
           </TableRow>
@@ -1436,6 +1583,9 @@ function EntryForm({
           {selectedKind === "body" ? <BodyFields draft={draft} updateNumber={updateNumber} /> : null}
           {selectedKind === "activity" ? <ActivityFields draft={draft} updateNumber={updateNumber} /> : null}
           {selectedKind === "measurements" ? <MeasurementFields draft={draft} updateNumber={updateNumber} /> : null}
+          {selectedKind === "sleep" ? (
+            <SleepFields draft={draft} updateNumber={updateNumber} />
+          ) : null}
           {selectedKind === "note" ? (
             <NoteFields draft={draft} updateText={updateText} updateNumber={updateNumber} />
           ) : null}
@@ -1561,6 +1711,25 @@ function MeasurementFields({
   )
 }
 
+function SleepFields({
+  draft,
+  updateNumber,
+}: {
+  draft: EntryDraft
+  updateNumber: (key: keyof EntryDraft, value: string) => void
+}) {
+  return (
+    <>
+      <Field label="Сон, часов">
+        <Input value={numberInput(draft.sleepHours)} onChange={(event) => updateNumber("sleepHours", event.target.value)} type="number" min="0" max="24" step="0.1" />
+      </Field>
+      <Field label="Качество">
+        <Input value={numberInput(draft.sleepQuality)} onChange={(event) => updateNumber("sleepQuality", event.target.value)} type="number" min="0" step="0.1" />
+      </Field>
+    </>
+  )
+}
+
 function NoteFields({
   draft,
   updateText,
@@ -1574,9 +1743,6 @@ function NoteFields({
     <>
       <Field label="Настроение">
         <Input value={draft.mood ?? ""} onChange={(event) => updateText("mood", event.target.value)} placeholder="ровно, бодро, усталость" />
-      </Field>
-      <Field label="Сон, часов">
-        <Input value={numberInput(draft.sleepHours)} onChange={(event) => updateNumber("sleepHours", event.target.value)} type="number" min="0" max="24" step="0.1" />
       </Field>
       <Field label="Стресс 1-10">
         <Input value={numberInput(draft.stressLevel)} onChange={(event) => updateNumber("stressLevel", event.target.value)} type="number" min="1" max="10" />

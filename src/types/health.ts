@@ -1,4 +1,4 @@
-export type EntryKind = "nutrition" | "body" | "activity" | "measurements" | "note"
+export type EntryKind = "nutrition" | "body" | "activity" | "measurements" | "sleep" | "note"
 
 export type HealthEntry = {
   id: string
@@ -25,6 +25,7 @@ export type HealthEntry = {
   bicepsCm?: number
   shouldersCm?: number
   sleepHours?: number
+  sleepQuality?: number
   stressLevel?: number
   mood?: string
 }
@@ -49,7 +50,8 @@ export const kindLabels: Record<EntryKind, string> = {
   body: "Тело",
   activity: "Активность",
   measurements: "Замеры",
-  note: "Заметка",
+  sleep: "Сон",
+  note: "Заметки",
 }
 
 export const genderLabels: Record<UserGender, string> = {

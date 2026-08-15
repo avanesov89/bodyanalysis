@@ -12,6 +12,12 @@ import {
 import { getDb, getFirebaseUserScope } from "@/lib/firebase"
 import type { EntryDraft, HealthEntry, HealthGoal, Lifestyle, SyncMode, UserGender, UserProfile } from "@/types/health"
 
+export type UserProfileSaveResult = {
+  profile: UserProfile
+  storage: SyncMode
+  warning?: string
+}
+
 const storageKey = "body-analysis.entries.v1"
 const profileStorageKey = "body-analysis.profile.v1"
 const firestoreTimeoutMs = 12_000
@@ -22,6 +28,8 @@ const lifestyleValues: Lifestyle[] = ["sedentary", "moderate", "active", "very_a
 
 type LegacyEntry = HealthEntry & {
   activityType?: string
+  awakenings?: number
+  bedtime?: string
   bodyFatPct?: number
   boneMineralsPct?: number
   distanceKm?: number
@@ -36,6 +44,7 @@ type LegacyEntry = HealthEntry & {
   pulseBpm?: number
   skeletalMuscleKg?: number
   title?: string
+  wakeTime?: string
 }
 
 function nowIso() {
@@ -57,6 +66,8 @@ function cleanProfile(profile: UserProfile) {
 function normalizeEntry(entry: LegacyEntry) {
   const {
     activityType,
+    awakenings,
+    bedtime,
     bodyFatPct,
     boneMineralsPct,
     distanceKm,
@@ -71,9 +82,12 @@ function normalizeEntry(entry: LegacyEntry) {
     pulseBpm,
     skeletalMuscleKg,
     title,
+    wakeTime,
     ...rest
   } = entry
   void activityType
+  void awakenings
+  void bedtime
   void bodyFatPct
   void boneMineralsPct
   void distanceKm
@@ -88,6 +102,7 @@ function normalizeEntry(entry: LegacyEntry) {
   void pulseBpm
   void skeletalMuscleKg
   void title
+  void wakeTime
   return cleanEntry(rest)
 }
 
@@ -209,8 +224,14 @@ export async function getUserProfile(): Promise<UserProfile> {
     return localReadProfile()
   }
 
-  const snapshot = await withFirestoreTimeout(getDoc(ref), "Загрузка профиля")
-  return normalizeProfile(snapshot.exists() ? snapshot.data() : null)
+  try {
+    const snapshot = await withFirestoreTimeout(getDoc(ref), "Загрузка профиля")
+    const profile = normalizeProfile(snapshot.exists() ? snapshot.data() : null)
+    localWriteProfile(profile)
+    return profile
+  } catch {
+    return localReadProfile()
+  }
 }
 
 export async function upsertEntry(
@@ -250,17 +271,31 @@ export async function removeEntry(id: string) {
   await withFirestoreTimeout(deleteDoc(doc(ref, id)), "Удаление записи")
 }
 
-export async function upsertUserProfile(profile: UserProfile): Promise<UserProfile> {
+export async function upsertUserProfile(profile: UserProfile): Promise<UserProfileSaveResult> {
   const nextProfile = normalizeProfile(profile)
   const ref = profileDocument()
+  localWriteProfile(nextProfile)
 
   if (!ref) {
-    localWriteProfile(nextProfile)
-    return nextProfile
+    return {
+      profile: nextProfile,
+      storage: "local",
+    }
   }
 
-  await withFirestoreTimeout(setDoc(ref, nextProfile), "Сохранение профиля")
-  return nextProfile
+  try {
+    await withFirestoreTimeout(setDoc(ref, nextProfile), "Сохранение профиля")
+    return {
+      profile: nextProfile,
+      storage: "firebase",
+    }
+  } catch (error) {
+    return {
+      profile: nextProfile,
+      storage: "local",
+      warning: error instanceof Error ? error.message : "Не удалось сохранить профиль в Firebase",
+    }
+  }
 }
 
 export function buildExampleEntries(): EntryDraft[] {
@@ -316,9 +351,14 @@ export function buildExampleEntries(): EntryDraft[] {
       shouldersCm: 122,
     },
     {
-      kind: "note",
+      kind: "sleep",
       date: isoDay(1),
       sleepHours: 7.2,
+      sleepQuality: 8,
+    },
+    {
+      kind: "note",
+      date: isoDay(1),
       stressLevel: 4,
       mood: "ровно",
     },

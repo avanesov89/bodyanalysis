@@ -6,6 +6,10 @@ function toNumber(value: number | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
+function finiteNumbers(values: Array<number | undefined>) {
+  return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+}
+
 export function recentEntries(entries: HealthEntry[], days = 7) {
   const end = new Date()
   end.setHours(23, 59, 59, 999)
@@ -23,6 +27,7 @@ export function summarizeEntries(entries: HealthEntry[], days = 7) {
   const nutrition = scope.filter((entry) => entry.kind === "nutrition")
   const body = scope.filter((entry) => entry.kind === "body")
   const activity = scope.filter((entry) => entry.kind === "activity")
+  const sleep = scope.filter((entry) => entry.kind === "sleep")
   const notes = scope.filter((entry) => entry.kind === "note")
 
   const totals = {
@@ -46,6 +51,8 @@ export function summarizeEntries(entries: HealthEntry[], days = 7) {
       : null
 
   const daysWithNutrition = new Set(nutrition.map((entry) => entry.date)).size || 1
+  const sleepHours = finiteNumbers(sleep.map((entry) => entry.sleepHours))
+  const sleepQuality = finiteNumbers(sleep.map((entry) => entry.sleepQuality))
 
   return {
     periodDays: days,
@@ -53,6 +60,7 @@ export function summarizeEntries(entries: HealthEntry[], days = 7) {
     nutritionRecords: nutrition.length,
     activityRecords: activity.length,
     bodyRecords: body.length,
+    sleepRecords: sleep.length,
     noteRecords: notes.length,
     averages: {
       calories: Math.round(totals.calories / daysWithNutrition),
@@ -61,6 +69,12 @@ export function summarizeEntries(entries: HealthEntry[], days = 7) {
       carbs: Math.round(totals.carbs / daysWithNutrition),
       fiber: Math.round(totals.fiber / daysWithNutrition),
       steps: Math.round(totals.steps / days),
+      sleepHours: sleepHours.length
+        ? Number((sleepHours.reduce((sum, value) => sum + value, 0) / sleepHours.length).toFixed(1))
+        : 0,
+      sleepQuality: sleepQuality.length
+        ? Number((sleepQuality.reduce((sum, value) => sum + value, 0) / sleepQuality.length).toFixed(1))
+        : 0,
     },
     totals,
     latestWeight,
@@ -96,6 +110,12 @@ export function buildInsights(entries: HealthEntry[]) {
   if (summary.activityRecords > 0) {
     insights.push(
       `Активность за неделю: ${summary.totals.activeCalories} активных ккал и в среднем ${summary.averages.steps} шагов в день.`,
+    )
+  }
+
+  if (summary.sleepRecords > 0) {
+    insights.push(
+      `Сон за неделю: в среднем ${summary.averages.sleepHours} ч, качество ${summary.averages.sleepQuality}.`,
     )
   }
 

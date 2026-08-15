@@ -4,7 +4,7 @@
 
 ## Цель
 
-Тело в цифрах — личный web-интерфейс для учета питания, показателей тела, активности, замеров и коротких заметок. Основной сценарий MVP: вручную заносить числовые показатели, хранить их в Firebase Firestore и выгружать JSON для дальнейшего анализа в GPT или другой программе.
+Тело в цифрах — личный web-интерфейс для учета питания, показателей тела, активности, замеров, сна и коротких заметок. Основной сценарий MVP: вручную заносить числовые показатели, хранить их в Firebase Firestore и выгружать JSON для дальнейшего анализа в GPT или другой программе.
 
 Это не полноценный дневник питания с блюдами. По питанию сейчас хранятся только агрегированные цифры за дату.
 
@@ -86,6 +86,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null
         && request.auth.uid == userId;
     }
+
+    match /healthUsers/{userId}/profile/{documentId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
   }
 }
 ```
@@ -98,7 +103,7 @@ service cloud.firestore {
 
 ```ts
 id: string
-kind: "nutrition" | "body" | "activity" | "measurements" | "note"
+kind: "nutrition" | "body" | "activity" | "measurements" | "sleep" | "note"
 date: string
 createdAt: string
 updatedAt: string
@@ -152,15 +157,23 @@ updatedAt: string
 
 В таблице значения разбиты по колонкам. Рядом со значениями показываются стрелки вверх/вниз относительно предыдущей записи.
 
-### Заметка
+### Сон
+
+Поля:
+
+- `sleepHours`
+- `sleepQuality`
+
+Таблица плоская: дата, часы сна и качество.
+
+### Заметки
 
 Поля:
 
 - `mood`
-- `sleepHours`
 - `stressLevel`
 
-Этот раздел пока минимальный.
+Раздел оставлен для короткого самочувствия без данных сна.
 
 ## UX-решения MVP
 
@@ -214,7 +227,7 @@ healthUsers/{uid}/profile/settings
 ```json
 {
   "exportedAt": "ISO date",
-  "section": "all | nutrition | body | activity | measurements | note",
+  "section": "all | nutrition | body | activity | measurements | sleep | note",
   "sectionLabel": "Все разделы | Питание | ...",
   "count": 0,
   "userProfile": {
@@ -271,4 +284,4 @@ git@github.com:avanesov89/bodyanalysis.git
 - Сделать страницу технического JSON-экспорта более гибкой: диапазон дат, формат за неделю, формат для GPT.
 - Добавить импорт/миграцию данных.
 - Разнести `src/App.tsx` на компоненты, когда интерфейс начнет расти.
-- Решить, нужен ли раздел `Заметка` в текущем виде или его лучше заменить на сон/самочувствие.
+- При необходимости расширить `Заметки` отдельным текстовым полем после возврата комментариев в UI.
