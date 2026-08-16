@@ -178,6 +178,29 @@ function formatNumber(value: number | null | undefined, suffix = "") {
   return `${value.toLocaleString("ru-RU")}${suffix}`
 }
 
+function formatDisplayDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number)
+  if (!year || !month || !day) {
+    return {
+      compact: value,
+      year: "",
+      full: value,
+    }
+  }
+
+  const date = new Date(year, month - 1, day)
+  const dayMonth = new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "short",
+  }).format(date).replace(".", "")
+
+  return {
+    compact: dayMonth,
+    year: String(year),
+    full: `${dayMonth} ${year}`,
+  }
+}
+
 function numericValue(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
@@ -796,7 +819,7 @@ function App() {
                   ) : null}
 
                   <section className="min-w-0">
-                    <div className="overflow-hidden rounded-md border bg-card">
+                    <div className="overflow-hidden rounded-md bg-card">
                       {selectedKind === "nutrition" ? (
                         <NutritionTable
                           entries={sectionEntries}
@@ -956,7 +979,7 @@ function SectionIntro({ kind }: { kind: EntryKind }) {
   const description = kindDescriptions[kind]
 
   return (
-    <section className="rounded-md border bg-card px-4 py-3">
+    <section className="rounded-md bg-card px-4 py-3">
       <div className="flex gap-3">
         <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
           <Icon className="size-4" />
@@ -1183,20 +1206,20 @@ function SettingsPage({
       </header>
 
       <div className="mt-6 grid w-full gap-6">
-        <section className="rounded-md border bg-card p-4 shadow-xs">
+        <section className="rounded-md bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Пользователь</h3>
           <div className="mt-4 grid gap-3 text-sm">
             {authEnabled ? (
               <>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b-[0.5px] pb-3">
                   <span className="text-muted-foreground">ID пользователя</span>
                   <span className="max-w-full break-all font-mono text-xs">{authUserId || "-"}</span>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b-[0.5px] pb-3">
                   <span className="text-muted-foreground">E-mail при регистрации</span>
                   <span className="font-medium">{authEmail || "Авторизован"}</span>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b-[0.5px] pb-3">
                   <span className="text-muted-foreground">Смена пароля</span>
                   <Button
                     size="sm"
@@ -1224,7 +1247,7 @@ function SettingsPage({
           </div>
         </section>
 
-        <form onSubmit={saveProfile} className="rounded-md border bg-card p-4 shadow-xs">
+        <form onSubmit={saveProfile} className="rounded-md bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Профиль для анализа</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Пол">
@@ -1310,7 +1333,7 @@ function SettingsPage({
           </div>
         </form>
 
-        <section className="rounded-md border bg-card p-4 shadow-xs">
+        <section className="rounded-md bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Оформление</h3>
           <div className="mt-4 grid gap-3 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1347,7 +1370,7 @@ function SettingsPage({
           </div>
         </section>
 
-        <section className="rounded-md border bg-card p-4 shadow-xs">
+        <section className="rounded-md bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Выгрузка архива для анализа</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <Field label="Раздел">
@@ -1387,7 +1410,7 @@ function AboutPage() {
       </header>
 
       <div className="mt-6 grid w-full gap-6">
-        <section className="rounded-md border bg-card p-4 shadow-xs">
+        <section className="rounded-md bg-card p-4 shadow-xs">
           <h3 className="font-semibold">Тело в цифрах</h3>
           <div className="mt-4 grid gap-3 text-sm leading-6 text-muted-foreground">
             <p>
@@ -1437,6 +1460,20 @@ function RowActions({
   )
 }
 
+function DateCell({ value }: { value: string }) {
+  const date = formatDisplayDate(value)
+
+  return (
+    <TableCell className="font-medium" title={value}>
+      <span className="hidden whitespace-nowrap md:inline">{date.full}</span>
+      <span className="grid gap-0.5 whitespace-nowrap leading-none md:hidden">
+        <span>{date.compact}</span>
+        {date.year ? <span className="text-[0.68rem] font-normal text-muted-foreground">{date.year}</span> : null}
+      </span>
+    </TableCell>
+  )
+}
+
 function NutritionTable({
   entries,
   loading,
@@ -1466,7 +1503,7 @@ function NutritionTable({
       <TableBody>
         {sortedEntries.map((entry) => (
           <TableRow key={entry.id}>
-            <TableCell className="font-medium">{entry.date}</TableCell>
+            <DateCell value={entry.date} />
             <TableCell className="text-right tabular-nums">{formatNumber(entry.calories)}</TableCell>
             <TableCell className="text-right tabular-nums">{formatNumber(entry.protein)}</TableCell>
             <TableCell className="text-right tabular-nums">{formatNumber(entry.fat)}</TableCell>
@@ -1515,7 +1552,7 @@ function NoteTable({
       <TableBody>
         {sortedEntries.map((entry) => (
           <TableRow key={entry.id}>
-            <TableCell className="font-medium">{entry.date}</TableCell>
+            <DateCell value={entry.date} />
             <TableCell>{entry.mood || "-"}</TableCell>
             <TableCell className="text-right tabular-nums">
               {entry.stressLevel ? `${formatNumber(entry.stressLevel)}/10` : "-"}
@@ -1563,7 +1600,7 @@ function SleepTable({
       <TableBody>
         {sortedEntries.map((entry) => (
           <TableRow key={entry.id}>
-            <TableCell className="font-medium">{entry.date}</TableCell>
+            <DateCell value={entry.date} />
             <TableCell className="text-right tabular-nums">{formatNumber(entry.sleepHours)}</TableCell>
             <TableCell className="text-right tabular-nums">{formatNumber(entry.sleepQuality)}</TableCell>
             <TableCell>
@@ -1615,7 +1652,7 @@ function BodyTable({
 
           return (
             <TableRow key={entry.id}>
-              <TableCell className="font-medium">{entry.date}</TableCell>
+              <DateCell value={entry.date} />
               <TableCell className="text-right">
                 <TrendValue value={entry.weightKg} previousValue={previous?.weightKg} />
               </TableCell>
@@ -1675,7 +1712,7 @@ function ActivityTable({
       <TableBody>
         {sortedEntries.map((entry) => (
           <TableRow key={entry.id}>
-            <TableCell className="font-medium">{entry.date}</TableCell>
+            <DateCell value={entry.date} />
             <TableCell className="text-right tabular-nums">{formatNumber(entry.activeCalories)}</TableCell>
             <TableCell className="text-right tabular-nums">{formatNumber(entry.steps)}</TableCell>
             <TableCell>
@@ -1728,7 +1765,7 @@ function MeasurementsTable({
 
           return (
             <TableRow key={entry.id}>
-              <TableCell className="font-medium">{entry.date}</TableCell>
+              <DateCell value={entry.date} />
               <TableCell className="text-right">
                 <TrendValue value={entry.waistCm} previousValue={previous?.waistCm} />
               </TableCell>
@@ -1785,7 +1822,7 @@ function EntryForm({
   updateNumber: (key: keyof EntryDraft, value: string) => void
 }) {
   return (
-    <form onSubmit={onSubmit} className="rounded-md border bg-card p-4 shadow-xs">
+    <form onSubmit={onSubmit} className="rounded-md bg-card p-4 shadow-xs">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="font-semibold">{editing ? "Редактировать запись" : "Новая запись"}</h3>

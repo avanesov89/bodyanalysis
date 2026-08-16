@@ -18,7 +18,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       type="button"
       className={cn(
-        "flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-colors focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+        "flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-base shadow-xs outline-none transition-colors focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm [&>span]:line-clamp-1",
         className,
       )}
       {...props}
