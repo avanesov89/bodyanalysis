@@ -53,6 +53,7 @@ type ExportKind = EntryKind | "all"
 type ThemeMode = "light" | "dark"
 const themeStorageKey = "body-analysis.theme.v1"
 const unsetSelectValue = "not_set"
+const minExportFilledDays = 14
 
 const kindIcons: Record<EntryKind, typeof Utensils> = {
   nutrition: Utensils,
@@ -181,6 +182,16 @@ function sortEntriesDesc(entries: HealthEntry[]) {
   })
 }
 
+function entriesForExport(entries: HealthEntry[], kind: ExportKind) {
+  return kind === "all"
+    ? entries
+    : entries.filter((entry) => entry.kind === kind)
+}
+
+function countFilledDays(entries: HealthEntry[]) {
+  return new Set(entries.map((entry) => entry.date)).size
+}
+
 function crc32(bytes: Uint8Array) {
   let crc = 0xffffffff
 
@@ -304,11 +315,13 @@ function exportProfile(profile: UserProfile) {
 function buildPromptMarkdown({
   exportedAt,
   exportKind,
+  filledDays,
   profile,
   recordCount,
 }: {
   exportedAt: string
   exportKind: ExportKind
+  filledDays: number
   profile: UserProfile
   recordCount: number
 }) {
@@ -330,6 +343,7 @@ function buildPromptMarkdown({
     "",
     `- Дата выгрузки: ${exportedAt}`,
     `- Раздел: ${sectionLabel}`,
+    `- Количество заполненных дней: ${filledDays}`,
     `- Количество записей: ${recordCount}`,
     "",
   ].join("\n")
@@ -604,9 +618,13 @@ function App() {
   }
 
   function downloadSectionJson() {
-    const sectionEntries = exportKind === "all"
-      ? entries
-      : entries.filter((entry) => entry.kind === exportKind)
+    const sectionEntries = entriesForExport(entries, exportKind)
+    const filledDays = countFilledDays(sectionEntries)
+    if (filledDays < minExportFilledDays) {
+      setMessage(`Для выгрузки нужно минимум ${minExportFilledDays} заполненных дней. Сейчас: ${filledDays}.`)
+      return
+    }
+
     const exportedAt = new Date().toISOString()
     const payload = {
       exportedAt,
@@ -627,6 +645,7 @@ function App() {
         content: buildPromptMarkdown({
           exportedAt,
           exportKind,
+          filledDays,
           profile: userProfile,
           recordCount: sectionEntries.length,
         }),
@@ -992,9 +1011,10 @@ function SettingsPage({
   const [profileSaving, setProfileSaving] = useState(false)
   const [passwordResetMessage, setPasswordResetMessage] = useState("")
   const [passwordResetLoading, setPasswordResetLoading] = useState(false)
-  const exportCount = exportKind === "all"
-    ? entries.length
-    : entries.filter((entry) => entry.kind === exportKind).length
+  const exportEntries = entriesForExport(entries, exportKind)
+  const exportCount = exportEntries.length
+  const exportFilledDays = countFilledDays(exportEntries)
+  const canExport = exportFilledDays >= minExportFilledDays
 
   useEffect(() => {
     setProfileDraft(userProfile)
@@ -1236,13 +1256,13 @@ function SettingsPage({
                 </SelectContent>
               </Select>
             </Field>
-            <Button type="button" onClick={onExport} disabled={exportCount === 0}>
+            <Button type="button" onClick={onExport} disabled={!canExport}>
               <Download className="size-4" />
               Скачать ZIP
             </Button>
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Записей для выгрузки: {exportCount}. В архив попадут JSON с данными и MD-промт с профилем и инструкцией.
+            Заполненных дней: {exportFilledDays}/{minExportFilledDays}. Записей для выгрузки: {exportCount}. В архив попадут JSON с данными и MD-промт с профилем и инструкцией.
           </p>
         </section>
       </div>
