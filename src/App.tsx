@@ -73,6 +73,15 @@ const kindDescriptions: Record<EntryKind, string> = {
   note: "Заметки дают контекст к цифрам. Настроение и стресс помогают объяснить скачки веса, голода, активности или режима, которые не видны в таблицах сами по себе.",
 }
 
+const mobileKindLabels: Record<EntryKind, string> = {
+  nutrition: "Питание",
+  body: "Тело",
+  activity: "Актив.",
+  measurements: "Замеры",
+  sleep: "Сон",
+  note: "Заметки",
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -664,9 +673,10 @@ function App() {
 
   return (
     <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-      <main className="min-h-svh bg-background">
+      <main className="min-h-svh overflow-x-hidden bg-background">
+        <MobileHeader activePage={activePage} onSettings={openSettings} onAbout={openAbout} />
         <div className="mx-auto grid max-w-[1380px] gap-0 lg:grid-cols-[248px_minmax(0,1fr)]">
-          <aside className="border-b px-5 py-5 lg:relative lg:min-h-svh lg:border-b-0 lg:after:absolute lg:after:top-5 lg:after:right-0 lg:after:bottom-5 lg:after:border-r lg:after:border-[var(--border)] lg:after:content-['']">
+          <aside className="hidden border-b px-5 py-5 lg:relative lg:block lg:min-h-svh lg:border-b-0 lg:after:absolute lg:after:top-5 lg:after:right-0 lg:after:bottom-5 lg:after:border-r lg:after:border-[var(--border)] lg:after:content-['']">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
                 <Activity className="size-5" />
@@ -729,7 +739,7 @@ function App() {
             </nav>
           </aside>
 
-          <section className="min-w-0 px-5 py-5">
+          <section className="min-w-0 px-4 pt-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))] lg:px-5 lg:py-5">
             {activePage === "settings" ? (
               <SettingsPage
                 authEmail={authUser?.email ?? ""}
@@ -785,7 +795,7 @@ function App() {
                     />
                   ) : null}
 
-                  <section>
+                  <section className="min-w-0">
                     <div className="overflow-hidden rounded-md border bg-card">
                       {selectedKind === "nutrition" ? (
                         <NutritionTable
@@ -837,8 +847,107 @@ function App() {
             )}
           </section>
         </div>
+        <MobileTabBar activePage={activePage} onOpenKind={openKind} />
       </main>
     </TooltipProvider>
+  )
+}
+
+function MobileHeader({
+  activePage,
+  onSettings,
+  onAbout,
+}: {
+  activePage: AppPage
+  onSettings: () => void
+  onAbout: () => void
+}) {
+  return (
+    <header className="sticky top-0 z-40 border-b bg-background/95 px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-3 backdrop-blur lg:hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Activity className="size-4.5" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold tracking-normal">Тело в цифрах</h1>
+            <p className="truncate text-xs text-muted-foreground">
+              {activePage === "settings"
+                ? "Настройки"
+                : activePage === "about"
+                  ? "О проекте"
+                  : kindLabels[activePage]}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={activePage === "settings" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={onSettings}
+                aria-label="Настройки"
+              >
+                <Settings className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Настройки</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={activePage === "about" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={onAbout}
+                aria-label="О проекте"
+              >
+                <Info className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>О проекте</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function MobileTabBar({
+  activePage,
+  onOpenKind,
+}: {
+  activePage: AppPage
+  onOpenKind: (kind: EntryKind) => void
+}) {
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+      <div className="mx-auto grid max-w-md grid-cols-6 gap-1">
+        {kindOptions.map((kind) => {
+          const Icon = kindIcons[kind] ?? Activity
+          const isActive = activePage === kind
+
+          return (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => onOpenKind(kind)}
+              className={[
+                "grid min-h-12 min-w-0 place-items-center gap-1 rounded-md px-1 py-1 text-[0.65rem] leading-none transition-colors",
+                isActive
+                  ? "bg-primary/12 text-primary"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              ].join(" ")}
+            >
+              <Icon className="size-4" />
+              <span className="max-w-full truncate">{mobileKindLabels[kind]}</span>
+            </button>
+          )
+        })}
+      </div>
+    </nav>
   )
 }
 
