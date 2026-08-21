@@ -107,7 +107,13 @@ kind: "nutrition" | "body" | "activity" | "measurements" | "sleep" | "note"
 date: string
 createdAt: string
 updatedAt: string
+source?: "manual" | "apple_health" | "fatsecret" | "mi_fitness" | "health_connect"
+sourceName?: string
+externalId?: string
+syncedAt?: string
 ```
+
+`source` нужен для будущего iOS-приложения и автоматической синхронизации Apple Health. Старые записи и новые ручные записи нормализуются как `manual`. Для детального плана iOS-приложения см. `docs/IOS_APP_PLAN.md`.
 
 ### Питание
 

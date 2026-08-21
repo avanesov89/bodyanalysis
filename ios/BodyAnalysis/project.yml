@@ -1,0 +1,31 @@
+name: BodyAnalysis
+options:
+  bundleIdPrefix: com.avanesov-ux
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 12.0.0
+targets:
+  BodyAnalysis:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - BodyAnalysis
+    resources:
+      - BodyAnalysis/GoogleService-Info.plist
+    dependencies:
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - sdk: HealthKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.avanesov-ux.ba
+        PRODUCT_NAME: BodyAnalysis
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: BodyAnalysis/Info.plist
+        CODE_SIGN_ENTITLEMENTS: BodyAnalysis/BodyAnalysis.entitlements

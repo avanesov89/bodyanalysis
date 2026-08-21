@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore"
 
 import { getDb, getFirebaseUserScope } from "@/lib/firebase"
-import type { EntryDraft, HealthEntry, HealthGoal, Lifestyle, SyncMode, UserGender, UserProfile } from "@/types/health"
+import type { EntryDraft, EntrySource, HealthEntry, HealthGoal, Lifestyle, SyncMode, UserGender, UserProfile } from "@/types/health"
 
 export type UserProfileSaveResult = {
   profile: UserProfile
@@ -25,6 +25,7 @@ const firestoreTimeoutMs = 12_000
 const genderValues: UserGender[] = ["male", "female"]
 const goalValues: HealthGoal[] = ["weight_loss", "muscle_gain", "maintenance"]
 const lifestyleValues: Lifestyle[] = ["sedentary", "moderate", "active", "very_active"]
+const sourceValues: EntrySource[] = ["manual", "apple_health", "fatsecret", "mi_fitness", "health_connect"]
 
 type LegacyEntry = HealthEntry & {
   activityType?: string
@@ -103,7 +104,26 @@ function normalizeEntry(entry: LegacyEntry) {
   void skeletalMuscleKg
   void title
   void wakeTime
-  return cleanEntry(rest)
+
+  const normalized = cleanEntry(rest)
+
+  if (!normalized.source || !sourceValues.includes(normalized.source)) {
+    normalized.source = "manual"
+  }
+
+  if (typeof normalized.sourceName !== "string" || normalized.sourceName.trim().length === 0) {
+    delete normalized.sourceName
+  }
+
+  if (typeof normalized.externalId !== "string" || normalized.externalId.trim().length === 0) {
+    delete normalized.externalId
+  }
+
+  if (typeof normalized.syncedAt !== "string" || normalized.syncedAt.trim().length === 0) {
+    delete normalized.syncedAt
+  }
+
+  return normalized
 }
 
 function localRead() {

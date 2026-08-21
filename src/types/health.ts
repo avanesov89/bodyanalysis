@@ -1,4 +1,5 @@
 export type EntryKind = "nutrition" | "body" | "activity" | "measurements" | "sleep" | "note"
+export type EntrySource = "manual" | "apple_health" | "fatsecret" | "mi_fitness" | "health_connect"
 
 export type HealthEntry = {
   id: string
@@ -6,6 +7,10 @@ export type HealthEntry = {
   date: string
   createdAt: string
   updatedAt: string
+  source?: EntrySource
+  sourceName?: string
+  externalId?: string
+  syncedAt?: string
   calories?: number
   protein?: number
   fat?: number
@@ -52,6 +57,14 @@ export const kindLabels: Record<EntryKind, string> = {
   measurements: "Замеры",
   sleep: "Сон",
   note: "Заметки",
+}
+
+export const sourceLabels: Record<EntrySource, string> = {
+  manual: "Вручную",
+  apple_health: "Apple Health",
+  fatsecret: "FatSecret",
+  mi_fitness: "Mi Fitness",
+  health_connect: "Health Connect",
 }
 
 export const genderLabels: Record<UserGender, string> = {

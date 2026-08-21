@@ -173,9 +173,16 @@ function numberInput(value: number | undefined) {
   return value ?? ""
 }
 
-function formatNumber(value: number | null | undefined, suffix = "") {
+function formatNumber(value: number | null | undefined, suffix = "", maximumFractionDigits = 1) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-"
-  return `${value.toLocaleString("ru-RU")}${suffix}`
+  return `${value.toLocaleString("ru-RU", {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+  })}${suffix}`
+}
+
+function formatWholeNumber(value: number | null | undefined, suffix = "") {
+  return formatNumber(value, suffix, 0)
 }
 
 function formatDisplayDate(value: string) {
@@ -214,10 +221,110 @@ function sortEntriesDesc(entries: HealthEntry[]) {
   })
 }
 
+const mergeableKinds = new Set<EntryKind>(["body", "activity", "sleep"])
+
+const sourcePriority: Array<NonNullable<HealthEntry["source"]>> = [
+  "apple_health",
+  "mi_fitness",
+  "health_connect",
+  "fatsecret",
+  "manual",
+]
+
+type MergeNumberField =
+  | "weightKg"
+  | "fatMassKg"
+  | "muscleKg"
+  | "waterPct"
+  | "visceralFat"
+  | "activeCalories"
+  | "steps"
+  | "sleepHours"
+  | "sleepQuality"
+
+const mergeFieldsByKind: Partial<Record<EntryKind, MergeNumberField[]>> = {
+  body: ["weightKg", "fatMassKg", "muscleKg", "waterPct", "visceralFat"],
+  activity: ["activeCalories", "steps"],
+  sleep: ["sleepHours", "sleepQuality"],
+}
+
+function hasNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+}
+
+function sourceRank(entry: HealthEntry) {
+  const index = sourcePriority.indexOf(entry.source ?? "manual")
+  return index === -1 ? sourcePriority.length : index
+}
+
+function pickFieldValue(group: HealthEntry[], field: MergeNumberField) {
+  return [...group]
+    .filter((entry) => hasNumber(entry[field]))
+    .sort((a, b) => {
+      const rankDiff = sourceRank(a) - sourceRank(b)
+      if (rankDiff !== 0) return rankDiff
+
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })[0]?.[field] as number | undefined
+}
+
+function mergeEntryGroup(group: HealthEntry[]): HealthEntry {
+  const sortedGroup = sortEntriesDesc(group)
+  const latestEntry = sortedGroup[0]
+  if (!latestEntry) {
+    throw new Error("Нельзя объединить пустую группу записей")
+  }
+
+  const actionEntry = sortedGroup.find((entry) => (entry.source ?? "manual") === "manual") ?? latestEntry
+  const sourceEntry = [...sortedGroup].sort((a, b) => sourceRank(a) - sourceRank(b))[0] ?? actionEntry
+  const createdAt = [...group].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]?.createdAt ?? actionEntry.createdAt
+  const updatedAt = latestEntry.updatedAt
+  const merged: HealthEntry = {
+    ...actionEntry,
+    source: sourceEntry.source ?? actionEntry.source,
+    sourceName: sourceEntry.sourceName ?? actionEntry.sourceName,
+    externalId: sourceEntry.externalId ?? actionEntry.externalId,
+    syncedAt: sourceEntry.syncedAt ?? actionEntry.syncedAt,
+    createdAt,
+    updatedAt,
+  }
+
+  const mergeFields = mergeFieldsByKind[actionEntry.kind] ?? []
+  for (const field of mergeFields) {
+    const value = pickFieldValue(group, field)
+    if (hasNumber(value)) {
+      merged[field] = value
+    }
+  }
+
+  return merged
+}
+
+function effectiveEntries(entries: HealthEntry[]) {
+  const groups = new Map<string, HealthEntry[]>()
+  const passthrough: HealthEntry[] = []
+
+  for (const entry of entries) {
+    if (!mergeableKinds.has(entry.kind)) {
+      passthrough.push(entry)
+      continue
+    }
+
+    const key = `${entry.kind}:${entry.date}`
+    groups.set(key, [...(groups.get(key) ?? []), entry])
+  }
+
+  return [
+    ...passthrough,
+    ...[...groups.values()].map((group) => mergeEntryGroup(group)),
+  ]
+}
+
 function entriesForExport(entries: HealthEntry[], kind: ExportKind) {
+  const entriesForAnalysis = effectiveEntries(entries)
   return kind === "all"
-    ? entries
-    : entries.filter((entry) => entry.kind === kind)
+    ? entriesForAnalysis
+    : entriesForAnalysis.filter((entry) => entry.kind === kind)
 }
 
 function countFilledDays(entries: HealthEntry[]) {
@@ -457,10 +564,11 @@ function App() {
 
   const syncMode = getSyncMode()
   const authEnabled = Boolean(getAuthClient())
+  const displayEntries = useMemo(() => effectiveEntries(entries), [entries])
 
   const sectionEntries = useMemo(() => {
-    return entries.filter((entry) => entry.kind === selectedKind)
-  }, [entries, selectedKind])
+    return displayEntries.filter((entry) => entry.kind === selectedKind)
+  }, [displayEntries, selectedKind])
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", themeMode === "dark")
@@ -768,7 +876,7 @@ function App() {
                 authEmail={authUser?.email ?? ""}
                 authEnabled={authEnabled}
                 authUserId={authUser?.uid ?? ""}
-                entries={entries}
+                entries={displayEntries}
                 exportKind={exportKind}
                 themeMode={themeMode}
                 userProfile={userProfile}
@@ -1713,8 +1821,8 @@ function ActivityTable({
         {sortedEntries.map((entry) => (
           <TableRow key={entry.id}>
             <DateCell value={entry.date} />
-            <TableCell className="text-right tabular-nums">{formatNumber(entry.activeCalories)}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatNumber(entry.steps)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatWholeNumber(entry.activeCalories)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatWholeNumber(entry.steps)}</TableCell>
             <TableCell>
               <RowActions entry={entry} onEdit={onEdit} onDelete={onDelete} />
             </TableCell>
